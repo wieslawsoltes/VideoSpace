@@ -2,11 +2,13 @@ using System.Text.Json;
 
 namespace VideoSpace.Controls;
 
-/// <summary>Read-only control bounds for acceptance tests of a Skia-rendered UI. No command execution or project mutation endpoint.</summary>
+/// <summary>Read-only bounds for real-input tests, not an editing-command endpoint.</summary>
 public static class UiRegistry
 {
     private static readonly Dictionary<string, WeakReference<FrameworkElement>> Elements = [];
+#if __WASM__
     private static DispatcherTimer? _timer;
+#endif
     public static void Register(string id, FrameworkElement element)
     {
         Elements[id] = new(element);
@@ -23,7 +25,7 @@ public static class UiRegistry
                     if (!target.IsLoaded || target.ActualWidth <= 0 || target.ActualHeight <= 0) continue;
                     var r = Studio.Bounds(target); items[key] = new { x = r.X, y = r.Y, width = r.Width, height = r.Height, enabled = target is not Control c || c.IsEnabled };
                 }
-                global::Uno.Foundation.WebAssemblyRuntime.InvokeJS("window.videoSpaceControls=" + JsonSerializer.Serialize(items) + ";'ok'");
+                global::VideoSpace.Media.BrowserInterop.Call("controls", JsonSerializer.Serialize(items));
             };
             _timer.Start();
         }
