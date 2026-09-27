@@ -5,6 +5,7 @@ public sealed class StudioButton : Button
 {
     private readonly IconView? _icon;
     private readonly TextBlock? _label;
+    private bool? _active;
     public string CommandId { get; }
     public StudioButton(string label, Action action, string? icon = null, string? commandId = null)
     {
@@ -16,10 +17,11 @@ public sealed class StudioButton : Button
     }
     public void SetActive(bool value)
     {
+        if (_active == value) return; _active = value;
         Background = Studio.Brush(value ? "#35435A" : "#00000000");
         if (_icon is not null) { _icon.Color = value ? Studio.Accent : Studio.Ink; _icon.Invalidate(); }
         if (_label is not null) _label.Foreground = Studio.Brush(value ? Studio.Accent : Studio.Ink);
     }
     public void SetText(string text) { if (_label is not null) _label.Text = text; }
-    public void SetIcon(string glyph) { if (_icon is not null) { _icon.Glyph = glyph; _icon.Invalidate(); } }
+    public void SetIcon(string glyph) { if (_icon is not null && _icon.Glyph != glyph) { _icon.Glyph = glyph; _icon.Invalidate(); } }
 }

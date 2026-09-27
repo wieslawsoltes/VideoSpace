@@ -10,6 +10,10 @@ namespace VideoSpace.Media;
 public sealed class MediaServices : IDisposable
 {
     private readonly Queue<MediaMessage> _queue = new();
+    private sealed record Presentation(FramePlan Plan, double X, double Y, double Width, double Height, bool Playing, double Rate, bool Guides);
+    private readonly Dictionary<string, Presentation> _presentations = [];
+    private bool? _hidden;
+    public long PresentedPlans { get; private set; }
     public bool Browser => OperatingSystem.IsBrowser();
 #if __WASM__
     private static string Call(string operation, object? payload = null) => BrowserInterop.Call(operation, JsonSerializer.Serialize(payload, ProjectSnapshot.Options));
@@ -69,13 +73,18 @@ public sealed class MediaServices : IDisposable
     public void Present(string id, FramePlan plan, double x, double y, double width, double height, bool playing, double rate, bool guides)
     {
 #if __WASM__
-        if (width >= 2 && height >= 2) Call("present", new { id, plan, x, y, width, height, playing, rate, guides });
+        if (width < 2 || height < 2) return;
+        var next = new Presentation(plan, x, y, width, height, playing, rate, guides);
+        if (_presentations.TryGetValue(id, out var previous) && previous == next) return;
+        Call("present", new { id, plan, x, y, width, height, playing, rate, guides });
+        _presentations[id] = next; PresentedPlans++;
 #endif
     }
     public void HideMonitors(bool hidden)
     {
 #if __WASM__
-        Call("hide", hidden);
+        if (_hidden == hidden) return;
+        Call("hide", hidden); _hidden = hidden;
 #endif
     }
     public void UnlockAudio()

@@ -15,6 +15,7 @@ public sealed class MonitorView : Grid, IDisposable
     private readonly VideoSpace.Rendering.FrameRenderer _renderer;
     private readonly MediaServices _media;
     private FramePlan? _plan;
+    private FrameRate _rate;
     public bool Guides { get; private set; }
     public string MonitorId { get; }
     public event Action<string>? Command;
@@ -40,8 +41,12 @@ public sealed class MonitorView : Grid, IDisposable
     public long TotalFrames { get; private set; }
     public void Update(FramePlan plan, long total, FrameRate rate, bool playing, double playbackRate, bool visible = true)
     {
-        _plan = plan; TotalFrames = total; _time.Rate = rate; _time.Update(plan.Frame); _duration.Text = Timecode.Format(total, rate); _info.Text = $"Fit  ·  {plan.Width} × {plan.Height}"; _play.SetIcon(playing ? "pause" : "play");
-        if (!_media.Browser) _surface.Invalidate();
+        bool changed = !ReferenceEquals(_plan, plan);
+        if (_plan is null || _plan.Frame != plan.Frame || _rate != rate) { _time.Rate = rate; _time.Update(plan.Frame); }
+        if (_plan is null || total != TotalFrames || _rate != rate) _duration.Text = Timecode.Format(total, rate);
+        if (_plan is null || plan.Width != _plan.Width || plan.Height != _plan.Height) _info.Text = $"Fit  ·  {plan.Width} × {plan.Height}";
+        _plan = plan; TotalFrames = total; _rate = rate; _play.SetIcon(playing ? "pause" : "play");
+        if (!_media.Browser && changed) _surface.Invalidate();
         if (_media.Browser && visible && Visibility == Visibility.Visible && ActualWidth > 2)
         {
             var b = Studio.Bounds(_surface); _media.Present(MonitorId, plan, b.X, b.Y, b.Width, b.Height, playing, playbackRate, Guides);

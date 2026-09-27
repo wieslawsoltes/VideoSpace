@@ -26,6 +26,10 @@ public sealed partial class StudioWorkbench : UserControl, IDisposable
     private readonly Dictionary<string, StudioButton> _commands = [];
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private PreparedFramePlanner? _planner, _sourcePlanner;
+    private FramePlan? _sourcePlan;
+    private string _sourcePlanAsset = "";
+    private long _lastPaintedPlayhead = -1;
     private long _lastRevision = -1;
     private long _savedRevision = -1;
     private double _lastTime, _playPosition = 96, _sourcePosition = 96;
@@ -71,14 +75,13 @@ public sealed partial class StudioWorkbench : UserControl, IDisposable
         _timer.Tick += (_, _) => Tick();
         SizeChanged += (_, _) =>
         {
-            bool narrow = ActualWidth < 1050;
             if (lower.ColumnDefinitions[0].Width.IsAbsolute && lower.ColumnDefinitions[0].Width.Value > ActualWidth * .42) lower.ColumnDefinitions[0].Width = new(Math.Max(230, ActualWidth * .3));
-            if (ActualHeight < 620) Timeline.Geometry.TrackHeight = 42; else Timeline.Geometry.TrackHeight = 52;
+            Timeline.Geometry.TrackHeight = ActualHeight < 620 ? 42 : 52;
             RefreshFrames();
         };
         Session.Select("ridge-cut"); RefreshPanels(); RefreshFrames();
     }
-    private long SourceLength => Session.Project.Assets.FirstOrDefault(a => a.Id == _sourceAsset) is { } asset ? Math.Max(1, Session.Project.FrameRate.Frames(asset.DurationSeconds)) : 1;
+    private long SourceLength => Session.Index.Assets.TryGetValue(_sourceAsset, out var asset) ? Math.Max(1, Session.Project.FrameRate.Frames(asset.DurationSeconds)) : 1;
     public void SetTypeface(SkiaSharp.SKTypeface typeface) { Studio.Typeface = typeface; _renderer.SetTypeface(typeface); RefreshPanels(); Timeline.Invalidate(); }
     public void ShowStatus(string text, bool error = false)
     {
@@ -95,7 +98,9 @@ public sealed partial class StudioWorkbench : UserControl, IDisposable
     private void SessionChanged()
     {
         if (_updating) return; _playPosition = Session.Playhead;
-        RefreshPanels(); RefreshFrames();
+        if (!Session.Index.Assets.ContainsKey(_sourceAsset)) { _sourceAsset = Session.Project.Assets.FirstOrDefault()?.Id ?? ""; _sourcePosition = 0; _sourceIn = 0; _sourceOut = Math.Min(SourceLength, Session.Project.FrameRate.Frames(10)); }
+        if (!Session.Project.Tracks.Any(t => t.Id == Timeline.TargetTrackId)) Timeline.TargetTrackId = Session.Project.Tracks.FirstOrDefault()?.Id ?? "";
+        Timeline.Invalidate(); RefreshPanels(); RefreshFrames();
     }
     private void Tick()
     {
@@ -109,33 +114,56 @@ public sealed partial class StudioWorkbench : UserControl, IDisposable
                 if (Session.Playing)
                 {
                     _playPosition += delta * Session.Project.FrameRate.Value * Session.PlaybackRate;
-                    if (_playPosition < 0 || _playPosition >= Session.Project.Duration) { _playPosition = Math.Clamp(_playPosition, 0, Session.Project.Duration - 1); Session.Playing = false; }
-                    Session.Playhead = (long)_playPosition; Timeline.EnsurePlayheadVisible();
+                    if (_playPosition < 0 || _playPosition >= Session.Index.Duration) { _playPosition = Math.Clamp(_playPosition, 0, Session.Index.Duration - 1); Session.Playing = false; }
+                    long frame = (long)_playPosition;
+                    if (Session.Playhead != frame) { Session.Playhead = frame; Timeline.EnsurePlayheadVisible(); }
                 }
                 if (_sourcePlaying) { _sourcePosition += delta * Session.Project.FrameRate.Value; if (_sourcePosition >= SourceLength) { _sourcePosition = SourceLength - 1; _sourcePlaying = false; } }
             }
             if (_ready && Session.Revision != _savedRevision && !_dialogOpen && !_exporting && _tickCount % 30 == 0)
             {
-                _savedRevision = Session.Revision; _media.SetProject(Session.Project); RunAsync(() => _media.SaveTextAsync(VideoSpace.Documents.ProjectFile.Save(Session.Project), "recovery.videospace", true));
+                _savedRevision = Session.Revision; _media.SetProject(Session.Project); RunAsync(() => _media.SaveTextAsync(VideoSpace.Documents.ProjectFile.Save(Session.RootProject), "recovery.videospace", true));
             }
             RefreshFrames();
-            if (++_tickCount % 3 == 0) { var levels = BrowserState.Meter(); _meter.Left = levels.ElementAtOrDefault(0); _meter.Right = levels.ElementAtOrDefault(1); _meter.Invalidate(); PublishDiagnostics(); }
+            if (++_tickCount % 6 == 0)
+            {
+                var levels = BrowserState.Meter(); double left = levels.ElementAtOrDefault(0), right = levels.ElementAtOrDefault(1);
+                if (Math.Abs(_meter.Left - left) > .0001 || Math.Abs(_meter.Right - right) > .0001) { _meter.Left = left; _meter.Right = right; _meter.Invalidate(); }
+                PublishDiagnostics();
+            }
         }
         catch (Exception ex) { ShowStatus("Playback: " + ex.Message, true); Session.Playing = _sourcePlaying = false; }
+    }
+    private PreparedFramePlanner Planner
+    {
+        get
+        {
+            if (_planner is null || !ReferenceEquals(_planner.Index, Session.Index))
+            {
+                _planner = new(Session.Index); _sourcePlanner = new(Session.Index); _sourcePlan = null;
+            }
+            return _planner;
+        }
     }
     private void RefreshFrames()
     {
         if (_disposed || _program is null || _source is null) return;
-        var p = Session.Project;
-        _program.Update(FramePlanner.Evaluate(p, Session.Playhead), p.Duration, p.FrameRate, Session.Playing && !_dialogOpen && !_exporting, Session.PlaybackRate, !_dialogOpen && !_exporting);
-        if (p.Assets.FirstOrDefault(a => a.Id == _sourceAsset) is { } asset)
+        var p = Session.Project; var planner = Planner;
+        _program.Update(planner.Evaluate(Session.Playhead), Session.Index.Duration, p.FrameRate, Session.Playing && !_dialogOpen && !_exporting, Session.PlaybackRate, !_dialogOpen && !_exporting);
+        long frame = (long)_sourcePosition;
+        if (_sourcePlan is null || _sourcePlan.Frame != frame || _sourcePlanAsset != _sourceAsset)
         {
-            long frame = (long)_sourcePosition;
-            var layer = new LayerPlan("source-preview", asset.Id, asset.Kind.ToString(), asset.Source, asset.Text, asset.Color, p.FrameRate.Seconds(frame), 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0);
-            var plan = new FramePlan(frame, p.FrameRate.Seconds(frame), asset.Width > 0 ? asset.Width : 1920, asset.Height > 0 ? asset.Height : 1080, p.FrameRate.Value, asset.Kind == MediaKind.Audio ? [] : [layer], [], []);
-            _source.Update(plan, SourceLength, p.FrameRate, _sourcePlaying && !_dialogOpen, 1, _sourcePanel.Selected == "Source" && !_dialogOpen && !_exporting);
+            _sourcePlanAsset = _sourceAsset;
+            if (Session.Index.Assets.TryGetValue(_sourceAsset, out var asset))
+            {
+                var clip = new TimelineClip { Id = "source-preview", AssetId = asset.Id, Duration = SourceLength };
+                var layer = _sourcePlanner!.Layer(clip, frame);
+                _sourcePlan = new(frame, p.FrameRate.Seconds(frame), asset.Width > 0 ? asset.Width : 1920, asset.Height > 0 ? asset.Height : 1080, p.FrameRate.Value, asset.Kind == MediaKind.Audio ? [] : [layer], [], []);
+            }
+            else _sourcePlan = new(frame, 0, p.Width, p.Height, p.FrameRate.Value, [], [], []);
         }
-        Timeline.Invalidate();
+        _source.Update(_sourcePlan, SourceLength, p.FrameRate, _sourcePlaying && !_dialogOpen, 1, _sourcePanel.Selected == "Source" && !_dialogOpen && !_exporting);
+        if (_lastPaintedPlayhead != Session.Playhead) { _lastPaintedPlayhead = Session.Playhead; Timeline.Invalidate(); }
     }
     private void RefreshPanels()
     {
@@ -145,7 +173,9 @@ public sealed partial class StudioWorkbench : UserControl, IDisposable
             var p = Session.Project; string signature = string.Join('|', Session.Selection.Order());
             if (_lastRevision != Session.Revision)
             {
-                _bin.Update(p, _sourceAsset); _projectTitle.Text = p.Name; RebuildHistory(); RebuildCaptions();
+                _bin.Update(p, _sourceAsset); _projectTitle.Text = Session.CanNavigateUp ? Session.RootProject.Name + " / " + p.SequenceName : p.Name;
+                _programPanel.SetCaption("Program: NORTH / Main edit", "Program: " + p.SequenceName);
+                _timelinePanel.SetCaption("NORTH / Main edit", (Session.CanNavigateUp ? "↳ " : "") + p.SequenceName); RebuildHistory(); RebuildCaptions();
                 _sourcePanel.InvalidatePanel("Metadata"); _lastRevision = Session.Revision;
                 _selectedSignature = "__invalidate__";
             }
@@ -187,7 +217,7 @@ public sealed partial class StudioWorkbench : UserControl, IDisposable
         {
             ready = _ready, revision = Session.Revision, playhead = Session.Playhead, playing = Session.Playing, selected = Session.Selection.ToArray(), tool = Session.Tool.ToString(), clipCount = p.Tracks.Sum(t => t.Clips.Count), assetCount = p.Assets.Count,
             canUndo = Session.CanUndo, canRedo = Session.CanRedo, status = Session.Status, workspace = _workspace, modal = _dialogOpen, exporting = _exporting, sourceAsset = _sourceAsset,
-            sourceIn = _sourceIn, sourceOut = _sourceOut, timeline = Timeline.Diagnostics(), framePlan = FramePlanner.Evaluate(p, Session.Playhead),
+            sourceIn = _sourceIn, sourceOut = _sourceOut, timeline = Timeline.Diagnostics(), framePlan = Planner.Evaluate(Session.Playhead), sequencePath = Session.SequencePath, transitionCount = p.Tracks.Sum(t => t.Transitions.Count), plannerEvaluations = Planner.Evaluations, plannerCacheHits = Planner.CacheHits, presentedPlans = _media.PresentedPlans,
             commands = _commands.ToDictionary(k => k.Key, k => { var r = Studio.Bounds(k.Value); return new { x = r.X, y = r.Y, width = r.Width, height = r.Height, enabled = k.Value.IsEnabled }; })
         });
     }
