@@ -13,6 +13,9 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v5
@@ -23,19 +26,21 @@ jobs:
           node-version: '22'
       - name: Install toolchain and font
         run: |
-          dotnet workload install wasm-tools --skip-manifest-update
+          mkdir -p artifacts
+          echo "Commit $GITHUB_SHA" | tee artifacts/commit.log
+          dotnet workload install wasm-tools --skip-manifest-update 2>&1 | tee artifacts/toolchain.log
           python3 scripts/fetch-assets.py
           npm ci
           npx playwright install --with-deps chromium
       - name: Test engine and browser evaluation
         run: |
-          dotnet run --project tests/VideoSpace.Tests -c Release
+          dotnet run --project tests/VideoSpace.Tests -c Release 2>&1 | tee artifacts/engine.log
           dotnet run --project tests/VideoSpace.Fixtures -c Release -- artifacts/fixtures
           for file in src/VideoSpace.Media/Web/*.js; do node --check "$file"; done
-          npm run test:plans
+          npm run test:plans 2>&1 | tee artifacts/frame-plans.log
       - name: Publish Uno browser host
         run: |
-          dotnet publish src/VideoSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/VideoSpace/
+          dotnet publish src/VideoSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/VideoSpace/ 2>&1 | tee artifacts/browser-build.log
           python3 scripts/collect-site.py artifacts/publish artifacts/site
       - name: Prepare original video test fixture
         run: |
@@ -44,7 +49,7 @@ jobs:
       - name: Browser acceptance tests
         run: |
           python3 scripts/serve-site.py --directory artifacts/site --port 4173 > artifacts/server.log 2>&1 &
-          npm run test:browser
+          npm run test:browser 2>&1 | tee artifacts/browser-tests.log
       - uses: actions/upload-artifact@v4
         if: success()
         with:
@@ -65,6 +70,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: VideoSpace-build-logs
+          path: artifacts/*.log
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
           name: VideoSpace-validation
           path: |
             artifacts/screenshots
@@ -75,7 +86,6 @@ jobs:
             artifacts/frame.png
             artifacts/exported.webm
             artifacts/edited.videospace
-            artifacts/server.log
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: browser
