@@ -6,3 +6,7 @@ node_modules/
 .idea/
 *.user
 .DS_Store
+src/VideoSpace.App/Assets/Fonts/*.ttf
+src/VideoSpace.App/Assets/Fonts/OFL.txt
+playwright-report/
+test-results/

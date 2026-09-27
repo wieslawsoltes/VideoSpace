@@ -36,7 +36,7 @@ public partial class App : Application
             _workbench = new StudioWorkbench(session, new MediaServices()); if (typeface is not null) _workbench.SetTypeface(typeface);
             _window.Content = _workbench;
             _window.Closed += (_, _) => _workbench.Dispose();
-            _window.Activated += (_, e) => { if (e.WindowActivationState == Windows.UI.Core.CoreWindowActivationState.Deactivated) { session.Playing = false; session.Notify(); } };
+            _window.Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated) { session.Playing = false; session.Notify(); } };
         }
         catch (Exception ex)
         {

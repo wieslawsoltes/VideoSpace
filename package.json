@@ -1,0 +1,1 @@
+{"name":"videospace-browser-tests","private":true,"type":"module","scripts":{"test:browser":"playwright test","test:plans":"node --test tests/js/*.test.mjs"},"devDependencies":{"@playwright/test":"1.63.0"},"engines":{"node":">=22"}}

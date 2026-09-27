@@ -16,7 +16,7 @@ public static class BrowserState
     public static void Visible(string id, bool visible)
     {
 #if __WASM__
-        global::Uno.Foundation.WebAssemblyRuntime.InvokeJS("window.VideoSpaceVisibility=window.VideoSpaceVisibility||{};window.VideoSpaceVisibility[" + JsonSerializer.Serialize(id) + "]=" + (visible ? "true" : "false") + ";'ok'");
+        global::Uno.Foundation.WebAssemblyRuntime.InvokeJS("document.documentElement.toggleAttribute(" + JsonSerializer.Serialize("data-videospace-" + id + "-hidden") + "," + (visible ? "false" : "true") + ");'ok'");
 #endif
     }
 }

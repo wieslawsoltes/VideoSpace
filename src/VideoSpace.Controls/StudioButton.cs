@@ -8,14 +8,11 @@ public sealed class StudioButton : Button
     public string CommandId { get; }
     public StudioButton(string label, Action action, string? icon = null, string? commandId = null)
     {
-        CommandId = commandId ?? label;
-        Style = (Style)Application.Current.Resources["StudioButtonStyle"];
-        FontFamily = Studio.Font;
+        CommandId = commandId ?? label; Style = (Style)Application.Current.Resources["StudioButtonStyle"]; FontFamily = Studio.Font;
         var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         if (icon is not null) { _icon = new IconView { Glyph = icon }; content.Children.Add(_icon); }
         if (label.Length > 0) { _label = Studio.Text(label); content.Children.Add(_label); }
-        Content = content; Studio.Name(this, CommandId); ToolTipService.SetToolTip(this, CommandId);
-        Click += (_, _) => action();
+        Content = content; Studio.Name(this, CommandId); UiRegistry.Register(CommandId, this); ToolTipService.SetToolTip(this, CommandId); Click += (_, _) => action();
     }
     public void SetActive(bool value)
     {

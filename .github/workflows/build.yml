@@ -25,15 +25,28 @@ jobs:
         run: |
           dotnet workload install wasm-tools --skip-manifest-update
           python3 scripts/fetch-assets.py
-      - name: Test engine and browser scripts
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test engine and browser evaluation
         run: |
           dotnet run --project tests/VideoSpace.Tests -c Release
+          dotnet run --project tests/VideoSpace.Fixtures -c Release -- artifacts/fixtures
           for file in src/VideoSpace.Media/Web/*.js; do node --check "$file"; done
+          npm run test:plans
       - name: Publish Uno browser host
         run: |
           dotnet publish src/VideoSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/VideoSpace/
           python3 scripts/collect-site.py artifacts/publish artifacts/site
+      - name: Prepare original video test fixture
+        run: |
+          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+          ffmpeg -y -f lavfi -i 'color=c=0xA94637:s=320x180:r=24:d=2' -f lavfi -i 'sine=frequency=440:sample_rate=48000:duration=2' -c:v libvpx-vp9 -b:v 250k -c:a libopus -shortest artifacts/fixtures/local-video.webm
+      - name: Browser acceptance tests
+        run: |
+          python3 scripts/serve-site.py --directory artifacts/site --port 4173 > artifacts/server.log 2>&1 &
+          npm run test:browser
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: VideoSpace-site
           path: artifacts/site
@@ -49,3 +62,45 @@ jobs:
         with:
           name: VideoSpace-source
           path: artifacts/VideoSpace-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VideoSpace-validation
+          path: |
+            artifacts/screenshots
+            artifacts/test-results
+            artifacts/playwright-report
+            artifacts/browser-results.xml
+            artifacts/fixtures
+            artifacts/frame.png
+            artifacts/exported.webm
+            artifacts/edited.videospace
+            artifacts/server.log
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: browser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: VideoSpace-site
+          path: site
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

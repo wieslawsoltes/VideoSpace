@@ -1,7 +1,6 @@
 using System.Globalization;
 using VideoSpace.Documents;
 using VideoSpace.Effects;
-using Windows.System;
 
 namespace VideoSpace.Workbench;
 
@@ -55,11 +54,10 @@ public sealed partial class StudioWorkbench
     }
     private void NewTitle()
     {
-        var name = Studio.Input("New title"), text = Studio.Input("YOUR TITLE"); text.AcceptsReturn = true; text.Height = 74;
+        TextBox name = Studio.Input("New title"), text = Studio.Input("YOUR TITLE"); text.AcceptsReturn = true; text.Height = 74;
         ShowOverlay("New graphic title", Form(Studio.Text("Name"), name, Studio.Text("Text"), text, Paragraph("Creates a reusable title asset and places a five-second clip above the video tracks at the playhead.")), ("Cancel", CloseOverlay), ("Create title", () =>
         {
-            if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("Enter title text.");
-            string? created = null;
+            if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("Enter title text."); string? created = null;
             Session.Execute("Create title", p =>
             {
                 var asset = new MediaAsset { Name = name.Text, Text = text.Text, Kind = MediaKind.Title, Bin = "Graphics", Color = "#BE91C6", DurationSeconds = 3600 }; p.Assets.Add(asset);
@@ -78,7 +76,7 @@ public sealed partial class StudioWorkbench
     private void AddCaption() => EditCaption(new(Session.Playhead, Math.Min(Session.Project.Duration + 72, Session.Playhead + 72), ""), true);
     private void EditCaption(Caption caption, bool create = false)
     {
-        var start = Studio.Input(Timecode.Format(caption.Start, Session.Project.FrameRate)), end = Studio.Input(Timecode.Format(caption.End, Session.Project.FrameRate)); var text = Studio.Input(caption.Text); text.AcceptsReturn = true; text.Height = 90;
+        TextBox start = Studio.Input(Timecode.Format(caption.Start, Session.Project.FrameRate)), end = Studio.Input(Timecode.Format(caption.End, Session.Project.FrameRate)); var text = Studio.Input(caption.Text); text.AcceptsReturn = true; text.Height = 90;
         ShowOverlay(create ? "Add caption" : "Edit caption", Form(Studio.Text("Start timecode"), start, Studio.Text("End timecode"), end, Studio.Text("Caption text"), text), ("Cancel", CloseOverlay), ("Save caption", () =>
         {
             var updated = new Caption(Timecode.Parse(start.Text, Session.Project.FrameRate), Timecode.Parse(end.Text, Session.Project.FrameRate), text.Text);
@@ -88,7 +86,7 @@ public sealed partial class StudioWorkbench
     }
     private void SequenceSettings()
     {
-        var p = Session.Project; var name = Studio.Input(p.SequenceName); var projectName = Studio.Input(p.Name); var width = Studio.Input(p.Width.ToString(CultureInfo.InvariantCulture)), height = Studio.Input(p.Height.ToString(CultureInfo.InvariantCulture));
+        var p = Session.Project; var name = Studio.Input(p.SequenceName); var projectName = Studio.Input(p.Name); TextBox width = Studio.Input(p.Width.ToString(CultureInfo.InvariantCulture)), height = Studio.Input(p.Height.ToString(CultureInfo.InvariantCulture));
         ShowOverlay("Sequence settings", Form(Studio.Text("Project name"), projectName, Studio.Text("Sequence name"), name, Studio.Text("Width / height in pixels"), Studio.Row(width, height), Paragraph($"Timebase: {p.FrameRate} fps. This version preserves the existing sequence timebase to avoid silently retiming edits. The core model supports rational rates for newly constructed projects.")), ("Cancel", CloseOverlay), ("Save settings", () =>
         {
             int w = int.Parse(width.Text, CultureInfo.InvariantCulture), h = int.Parse(height.Text, CultureInfo.InvariantCulture);
@@ -120,7 +118,7 @@ public sealed partial class StudioWorkbench
     private void StartVideoExport(int height)
     {
         if (!_media.Browser) { ShowStatus("The native host does not yet include a video encoder. Open the browser version for WebM export.", true); return; }
-        _exportProgress = Paragraph("Preparing local media and the video recorder…"); var text = _exportProgress;
+        var text = Paragraph("Preparing local media and the video recorder…");
         ShowOverlay("Exporting video", Form(text, Paragraph("Do not hide this tab. Cancellation discards the current recording without affecting the project.")), ("Cancel export", () => _media.CancelExport()));
         _exportProgress = text; _exporting = true; _media.ExportVideo(Session.Project, height);
     }

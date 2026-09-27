@@ -1,9 +1,6 @@
-/* Optional monitor overlays and visibility; media/GPU modules remain usable independently. */
-(function (g) {
-  const hiddenViews = () => {
-    for (const [id, visible] of Object.entries(g.VideoSpaceVisibility || {})) { const canvas = document.getElementById('videospace-' + id); if (canvas && !visible) canvas.style.display = 'none'; }
-    requestAnimationFrame(hiddenViews);
-  };
-  requestAnimationFrame(hiddenViews);
-  // Visibility is enforced by the compositor tick as well; this handles the first asynchronous canvas creation.
-})(globalThis);
+/* Visibility of DOM-backed video surfaces follows the hosting Uno panels. */
+(function () {
+  const style = document.createElement('style');
+  style.textContent = 'html[data-videospace-source-hidden] #videospace-source,html[data-videospace-program-hidden] #videospace-program{display:none!important}html,body{background:#18191b!important}';
+  document.head.append(style);
+})();

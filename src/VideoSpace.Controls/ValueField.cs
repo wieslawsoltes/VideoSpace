@@ -11,13 +11,13 @@ public sealed class ValueField : Grid
     private double _value, _startValue, _startX;
     private bool _dragging, _updating;
     public double Value => _value;
+    public bool IsEnabled { get => _input.IsEnabled; set { _input.IsEnabled = value; _label.IsHitTestVisible = value; Opacity = value ? 1 : .45; } }
     public event Action<double>? Committed;
     public ValueField(string name, double value, double min, double max, double step = 1, string suffix = "")
     {
-        ColumnDefinitions.Add(new() { Width = Studio.Star() }); ColumnDefinitions.Add(new() { Width = new(84) });
-        Height = 31; _value = value;
+        ColumnDefinitions.Add(new() { Width = Studio.Star() }); ColumnDefinitions.Add(new() { Width = new(84) }); Height = 31; _value = value;
         _label = Studio.Text(name, 12, Studio.Muted); _label.Margin = new(9, 0, 6, 0);
-        _input = Studio.Input(value.ToString("0.###", CultureInfo.InvariantCulture)); _input.TextAlignment = TextAlignment.Right; _input.Margin = new(2, 2, 8, 2); _input.Foreground = Studio.Brush(Studio.Accent); Studio.Name(_input, name); ToolTipService.SetToolTip(_label, "Drag to adjust " + name + suffix);
+        _input = Studio.Input(value.ToString("0.###", CultureInfo.InvariantCulture)); _input.TextAlignment = TextAlignment.Right; _input.Margin = new(2, 2, 8, 2); _input.Foreground = Studio.Brush(Studio.Accent); Studio.Name(_input, name); UiRegistry.Register("Field " + name, _input); ToolTipService.SetToolTip(_label, "Drag to adjust " + name + suffix);
         Studio.At(this, _label); Studio.At(this, _input, column: 1);
         void Commit()
         {
