@@ -1,0 +1,51 @@
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install toolchain and font
+        run: |
+          dotnet workload install wasm-tools --skip-manifest-update
+          python3 scripts/fetch-assets.py
+      - name: Test engine and browser scripts
+        run: |
+          dotnet run --project tests/VideoSpace.Tests -c Release
+          for file in src/VideoSpace.Media/Web/*.js; do node --check "$file"; done
+      - name: Publish Uno browser host
+        run: |
+          dotnet publish src/VideoSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/VideoSpace/
+          python3 scripts/collect-site.py artifacts/publish artifacts/site
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoSpace-site
+          path: artifacts/site
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Source snapshot
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git archive --format=zip --output=artifacts/VideoSpace-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VideoSpace-source
+          path: artifacts/VideoSpace-source.zip

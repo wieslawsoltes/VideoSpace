@@ -1,0 +1,15 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="'$(VideoSpaceDesktopOnly)' == 'true'">net10.0-desktop</TargetFrameworks>
+    <UnoSingleProject>true</UnoSingleProject><OutputType>Library</OutputType><GenerateLibraryLayout>true</GenerateLibraryLayout>
+    <UnoFeatures>SkiaRenderer;</UnoFeatures><IsPackable>true</IsPackable>
+    <Description>Reusable custom Uno timeline, monitors, bins, panels, icons and editing controls.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../VideoSpace.Editing/VideoSpace.Editing.csproj" />
+    <ProjectReference Include="../VideoSpace.Timeline/VideoSpace.Timeline.csproj" />
+    <ProjectReference Include="../VideoSpace.Rendering/VideoSpace.Rendering.csproj" />
+    <ProjectReference Include="../VideoSpace.Media/VideoSpace.Media.csproj" />
+  </ItemGroup>
+</Project>
