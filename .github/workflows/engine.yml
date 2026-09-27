@@ -1,7 +1,7 @@
 name: Engine
 on:
   push:
-    branches: [main]
+    branches: [main, feat/parity-performance]
   pull_request:
   workflow_dispatch:
 permissions:

@@ -1,6 +1,6 @@
 namespace VideoSpace.Core;
 
-public enum MediaKind { Video, Audio, Image, Generator, Title }
+public enum MediaKind { Video, Audio, Image, Generator, Title, Sequence, Multicam }
 
 public sealed class MediaAsset
 {
@@ -17,4 +17,11 @@ public sealed class MediaAsset
     public long ByteLength { get; set; }
     public bool HasAudio { get; set; }
     public float[] Peaks { get; set; } = [];
+    public VideoProject? Sequence { get; set; }
+    public List<CameraAngle> Angles { get; set; } = [];
+    public int AudioAngle { get; set; }
+    public bool AudioFollowsVideo { get; set; }
 }
+
+/// <summary>Time-aligned camera source. OffsetSeconds maps group zero to source time.</summary>
+public sealed record CameraAngle(string AssetId, string Name, double OffsetSeconds = 0);
