@@ -12,5 +12,6 @@
   <ItemGroup><ProjectReference Include="../VideoSpace.Workbench/VideoSpace.Workbench.csproj" /></ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-browserwasm'">
     <EmbeddedResource Include="../VideoSpace.Media/Web/*.js" Link="Platforms/WebAssembly/WasmScripts/%(Filename)%(Extension)" />
+    <TrimmerRootDescriptor Include="LinkerConfig.xml" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,8 @@
+<linker>
+  <!-- Project interchange and diagnostic DTOs use reflection-based JSON. Preserve their schema in the browser publish. -->
+  <assembly fullname="VideoSpace.Core" preserve="all" />
+  <assembly fullname="VideoSpace.Effects" preserve="all" />
+  <assembly fullname="VideoSpace.Media" preserve="all" />
+  <assembly fullname="VideoSpace.Controls" preserve="all" />
+  <assembly fullname="VideoSpace.Workbench" preserve="all" />
+</linker>

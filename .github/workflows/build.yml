@@ -42,6 +42,13 @@ jobs:
         run: |
           dotnet publish src/VideoSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/VideoSpace/ 2>&1 | tee artifacts/browser-build.log
           python3 scripts/collect-site.py artifacts/publish artifacts/site
+      - name: Preserve browser candidate for independent diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoSpace-candidate
+          path: artifacts/site
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Prepare original video test fixture
         run: |
           command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
@@ -49,7 +56,7 @@ jobs:
       - name: Browser acceptance tests
         run: |
           python3 scripts/serve-site.py --directory artifacts/site --port 4173 > artifacts/server.log 2>&1 &
-          npm run test:browser 2>&1 | tee artifacts/browser-tests.log
+          npm run test:browser -- --max-failures=1 2>&1 | tee artifacts/browser-tests.log
       - uses: actions/upload-artifact@v4
         if: success()
         with:
@@ -72,7 +79,6 @@ jobs:
         with:
           name: VideoSpace-build-logs
           path: artifacts/*.log
-          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
