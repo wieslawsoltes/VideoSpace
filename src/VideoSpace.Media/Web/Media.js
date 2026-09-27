@@ -5,7 +5,19 @@
   const queue = [], assets = new Map(), views = new Map(), sessions = new Map(), generated = new Map();
   let database, initialized = false, hidden = false, animation, project, saveTimer, audioContext, master, analyser, meterData;
   const audioNodes = new Map();
-  M.diagnostics = { backend: {}, meter: [0, 0], imports: 0, exports: 0, errors: [], frames: 0 };
+  let contentEpoch = 0;
+  const activeSessions = new Map();
+  const dirty = () => { contentEpoch++; };
+  global.addEventListener('resize', dirty);
+  function stopSession(session) {
+    const v = session.element; if (session.callback && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(session.callback);
+    session.disposed = true; v.pause(); v.removeAttribute('src'); v.load();
+  }
+  function disposeAudio(node) {
+    node.element?.pause(); if (node.element) { node.element.removeAttribute('src'); node.element.load(); }
+    for (const o of node.oscillators || []) o.stop(); node.source?.disconnect(); node.gain.disconnect(); node.pan.disconnect();
+  }
+  M.diagnostics = { backend: {}, meter: [0, 0], imports: 0, exports: 0, errors: [], frames: 0, generatedFrames: 0, compositor: {} };
   M.emit = (type, text = '', extra = {}) => { queue.push({ type, text, ...extra }); if (queue.length > 200) queue.shift(); };
   M.report = text => { if (M.diagnostics.errors.at(-1) === text) return; M.diagnostics.errors.push(text); if (M.diagnostics.errors.length > 30) M.diagnostics.errors.shift(); M.emit('status', text); };
   M.drain = () => JSON.stringify(queue.splice(0));
@@ -26,6 +38,9 @@
   function makeCanvas(width = 960, height = 540) { const c = document.createElement('canvas'); c.width = width; c.height = height; return c; }
   function generatedSource(layer, key) {
     let canvas = generated.get(key); if (!canvas) { canvas = makeCanvas(); generated.set(key, canvas); }
+    const stamp = JSON.stringify([layer.kind, layer.source, layer.text, layer.kind === 'Generator' ? layer.sourceTime : 0]);
+    if (canvas.__vsStamp === stamp) return canvas;
+    canvas.__vsStamp = stamp; canvas.__vsVersion = (canvas.__vsVersion || 0) + 1; canvas.__vsUsed = performance.now(); M.diagnostics.generatedFrames++;
     const c = canvas.getContext('2d'), w = canvas.width, h = canvas.height; c.clearRect(0, 0, w, h);
     if (layer.kind === 'Title') { c.fillStyle = '#F6F1E5'; c.font = `${h * .14}px Inter, Arial, sans-serif`; c.textAlign = 'center'; c.fillText(layer.text || '', w / 2, h * .55); return canvas; }
     if (layer.kind === 'Captions') {
@@ -45,8 +60,8 @@
     return canvas;
   }
   function offlineSource(name) {
-    const key = 'offline'; let canvas = generated.get(key); if (!canvas) { canvas = makeCanvas(); generated.set(key, canvas); }
-    const c = canvas.getContext('2d'); c.fillStyle = '#25282B'; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = '#B7BCC2'; c.font = '18px Arial'; c.textAlign = 'center'; c.fillText('MEDIA OFFLINE — IMPORT TO RELINK', 480, 262); c.font = '13px Arial'; c.fillText(String(name).slice(0, 90), 480, 295); return canvas;
+    const key = 'offline:' + name; let canvas = generated.get(key); if (!canvas) { canvas = makeCanvas(); generated.set(key, canvas); }
+    if (canvas.__vsVersion) return canvas; canvas.__vsVersion = 1; const c = canvas.getContext('2d'); c.fillStyle = '#25282B'; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = '#B7BCC2'; c.font = '18px Arial'; c.textAlign = 'center'; c.fillText('MEDIA OFFLINE — IMPORT TO RELINK', 480, 262); c.font = '13px Arial'; c.fillText(String(name).slice(0, 90), 480, 295); return canvas;
   }
   M.getSource = (layer, key, playing, rate = 1) => {
     if (['Generator', 'Title', 'Captions'].includes(layer.kind)) return generatedSource(layer, key);
@@ -54,18 +69,35 @@
     if (layer.kind === 'Image') return asset.image || offlineSource(asset.asset.name);
     let session = sessions.get(key);
     if (!session || session.assetId !== layer.assetId) {
-      if (session) { session.element.pause(); session.element.removeAttribute('src'); session.element.load(); }
+      if (session) stopSession(session);
       const video = document.createElement('video'); video.src = asset.url; video.muted = true; video.playsInline = true; video.preload = 'auto'; video.addEventListener('error', () => M.report('Cannot decode ' + asset.asset.name));
       session = { assetId: layer.assetId, element: video }; sessions.set(key, session);
+      const changed = () => { video.__vsVersion = (video.__vsVersion || 0) + 1; dirty(); };
+      for (const event of ['loadedmetadata', 'loadeddata', 'seeked', 'error']) video.addEventListener(event, changed);
+      const next = () => { if (!session.disposed) { changed(); session.callback = video.requestVideoFrameCallback(next); } };
+      if (video.requestVideoFrameCallback) session.callback = video.requestVideoFrameCallback(next);
     }
+    const root = key.split(':')[0]; activeSessions.get(root)?.add(key);
     const v = session.element; session.used = performance.now();
     const target = Math.max(0, Math.min(layer.sourceTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .001) : layer.sourceTime));
-    if (v.readyState >= 1 && !v.seeking && Math.abs(v.currentTime - target) > (playing && rate > 0 ? .16 : .0008)) { try { v.currentTime = target; } catch { /* Decoder will retry on the next presentation. */ } }
+    if (v.readyState >= 1 && !v.seeking && Math.abs(v.currentTime - target) > (playing && rate > 0 ? .16 : .0008)) { try { v.currentTime = target; } catch { } }
     if (playing && rate > 0) { v.playbackRate = Math.max(.0625, Math.min(16, (layer.speed || 1) * rate)); if (v.paused) v.play().catch(() => {}); } else v.pause();
     return v.readyState >= 2 ? v : offlineSource(asset.asset.name);
   };
-  M.inputs = (plan, context, playing, rate) => {
-    const result = plan.layers.map(layer => ({ layer, source: M.getSource(layer, context + ':' + layer.clipId, playing, rate) }));
+  M.inputs = (plan, context, playing, rate, budget = { nodes: 0 }) => {
+    const result = [];
+    for (const layer of plan.layers) {
+      if (++budget.nodes > 4096) throw new Error('Expanded composition exceeds 4096 nodes.');
+      const key = context + ':' + layer.clipId;
+      if (layer.transition) {
+        const t = layer.transition;
+        result.push({ layer, transition: {
+          from: M.inputs({ ...plan, layers: [t.from], captions: [] }, key + ':from', playing, rate, budget),
+          to: M.inputs({ ...plan, layers: [t.to], captions: [] }, key + ':to', playing, rate, budget)
+        }});
+      } else if (layer.nested) result.push({ layer, nested: M.inputs(layer.nested, key + ':nested', playing, rate * layer.speed, budget) });
+      else result.push({ layer, source: M.getSource(layer, key, playing, rate) });
+    }
     if (plan.captions?.length) { const layer = { clipId: 'captions', kind: 'Captions', text: plan.captions.join('  '), opacity: 1, scale: 1, contrast: 1, saturation: 1 }; result.push({ layer, source: generatedSource(layer, context + ':captions') }); }
     return result;
   };
@@ -73,7 +105,7 @@
     const old = assets.get(asset.id); if (old) { URL.revokeObjectURL(old.url); old.image?.close(); }
     const item = { file, asset, url: URL.createObjectURL(file) };
     if (asset.kind === 'Image') item.image = await createImageBitmap(file);
-    assets.set(asset.id, item);
+    assets.set(asset.id, item); dirty();
     if (persist) { try { await dbPut('assets', { file, asset }, asset.id); } catch (error) { M.emit('error', 'Media is available for this session but could not be persisted: ' + error.message); } }
     return item;
   }
@@ -92,7 +124,7 @@
           if (kind !== 'Audio') { const canvas = makeCanvas(192, 108), c = canvas.getContext('2d'); c.fillStyle = '#000'; c.fillRect(0, 0, 192, 108); const src = bitmap || probe; if (bitmap || probe.readyState >= 2) { const fit = Math.min(192 / asset.width, 108 / asset.height); c.drawImage(src, (192 - asset.width * fit) / 2, (108 - asset.height * fit) / 2, asset.width * fit, asset.height * fit); thumbnail = canvas.toDataURL('image/jpeg', .7).split(',')[1]; } }
           if (kind !== 'Image' && file.size <= 32 * 1024 * 1024) {
             let context;
-            try { context = new AudioContext(); const audio = await context.decodeAudioData(await file.arrayBuffer()); const data = audio.getChannelData(0), count = 512; asset.peaks = Array.from({ length: count }, (_, b) => { let peak = 0; const start = Math.floor(b * data.length / count), end = Math.floor((b + 1) * data.length / count); for (let i = start; i < end; i++) peak = Math.max(peak, Math.abs(data[i])); return peak; }); } catch { /* Decode availability is independent of video playback support. */ } finally { await context?.close().catch(() => {}); }
+            try { context = new AudioContext(); const audio = await context.decodeAudioData(await file.arrayBuffer()); const data = audio.getChannelData(0), count = 512; asset.peaks = Array.from({ length: count }, (_, b) => { let peak = 0; const start = Math.floor(b * data.length / count), end = Math.floor((b + 1) * data.length / count); for (let i = start; i < end; i++) peak = Math.max(peak, Math.abs(data[i])); return peak; }); } catch { } finally { await context?.close().catch(() => {}); }
           }
           await register(file, asset, true); M.emit('asset', '', { asset, bytes: thumbnail }); M.diagnostics.imports++;
         } finally { bitmap?.close(); if (probe) { probe.pause(); probe.removeAttribute('src'); probe.load(); } if (url) URL.revokeObjectURL(url); }
@@ -110,7 +142,6 @@
   M.downloadBlob = (blob, name) => { const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = name; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); };
   M.downloadText = (text, name) => M.downloadBlob(new Blob([text], { type: 'application/octet-stream' }), name);
   M.downloadBase64 = (base64, name) => { const data = atob(base64); const bytes = Uint8Array.from(data, c => c.charCodeAt(0)); M.downloadBlob(new Blob([bytes]), name); };
-
   M.unlockAudio = () => {
     if (!audioContext) {
       audioContext = new AudioContext(); master = audioContext.createGain(); master.gain.value = .8; analyser = audioContext.createAnalyser(); analyser.fftSize = 256; meterData = new Float32Array(analyser.fftSize); master.connect(analyser); analyser.connect(audioContext.destination);
@@ -123,6 +154,8 @@
     const active = new Set(), now = audioContext.currentTime;
     for (const layer of plan.audio || []) {
       const key = prefix + ':' + layer.clipId; active.add(key); let node = audioNodes.get(key);
+      if (node && node.assetId !== layer.assetId) { disposeAudio(node); audioNodes.delete(key); node = null; }
+      if (!node && layer.source !== 'tone' && !assets.has(layer.assetId)) continue;
       if (!node) {
         const gain = audioContext.createGain(), pan = audioContext.createStereoPanner(); gain.gain.value = 0; gain.connect(pan); pan.connect(destination || master);
         node = { gain, pan, prefix, assetId: layer.assetId };
@@ -133,7 +166,7 @@
         }
         audioNodes.set(key, node);
       }
-      node.gain.gain.setTargetAtTime(playing && rate > 0 ? Math.min(4, Math.max(0, layer.gain)) : 0, now, .008); node.pan.pan.setValueAtTime(Math.max(-1, Math.min(1, layer.pan)), now);
+      node.used = performance.now(); node.gain.gain.setTargetAtTime(playing && rate > 0 ? Math.min(4, Math.max(0, layer.gain)) : 0, now, .008); node.pan.pan.setValueAtTime(Math.max(-1, Math.min(1, layer.pan)), now);
       const e = node.element;
       if (e) {
         if (e.readyState >= 1 && !e.seeking && Math.abs(e.currentTime - layer.sourceTime) > .15) e.currentTime = Math.max(0, Math.min(layer.sourceTime, e.duration - .001));
@@ -141,40 +174,71 @@
         if (playing && rate > 0) { if (e.paused) e.play().catch(() => {}); } else e.pause();
       }
     }
-    for (const [key, node] of audioNodes) if (node.prefix === prefix && !active.has(key)) { node.gain.gain.setTargetAtTime(0, now, .008); node.element?.pause(); }
+    for (const [key, node] of audioNodes) if (node.prefix === prefix && !active.has(key)) { node.gain.gain.setTargetAtTime(0, now, .008); node.element?.pause(); if (performance.now() - (node.used || 0) > 10000) { disposeAudio(node); audioNodes.delete(key); } }
     if (analyser) { analyser.getFloatTimeDomainData(meterData); const rms = Math.sqrt(meterData.reduce((s, v) => s + v * v, 0) / meterData.length); M.diagnostics.meter = [rms, rms]; }
   };
   M.stopAudio = prefix => {
-    for (const [key, node] of audioNodes) if (!prefix || node.prefix === prefix) { node.element?.pause(); if (node.element) { node.element.removeAttribute('src'); node.element.load(); } for (const o of node.oscillators || []) o.stop(); node.source?.disconnect(); node.gain.disconnect(); node.pan.disconnect(); audioNodes.delete(key); }
+    for (const [key, node] of audioNodes) if (!prefix || node.prefix === prefix) { disposeAudio(node); audioNodes.delete(key); }
   };
-  M.releaseContext = prefix => { for (const [key, session] of sessions) if (key.startsWith(prefix + ':')) { session.element.pause(); session.element.removeAttribute('src'); session.element.load(); sessions.delete(key); } for (const key of generated.keys()) if (key.startsWith(prefix + ':')) generated.delete(key); };
+  M.releaseContext = prefix => {
+    for (const [key, session] of sessions) if (key.startsWith(prefix + ':')) { stopSession(session); sessions.delete(key); }
+    for (const key of generated.keys()) if (key.startsWith(prefix + ':')) generated.delete(key);
+  };
   async function newView(id) {
     const canvas = makeCanvas(); canvas.id = 'videospace-' + id; canvas.setAttribute('aria-hidden', 'true'); canvas.style.cssText = 'position:fixed;pointer-events:none;z-index:20;background:black;display:none'; document.body.append(canvas);
-    const view = { id, compositor: new global.VideoSpaceGPU.Compositor(canvas, M.report), ready: false, state: null }; views.set(id, view);
+    const view = { id, compositor: new global.VideoSpaceGPU.Compositor(canvas, M.report), ready: false, state: null, revision: 0, painted: -1, epoch: -1 }; views.set(id, view);
     try { await view.compositor.initialize(); view.ready = true; M.diagnostics.backend[id] = view.compositor.backend; M.emit('backend', view.compositor.backend); } catch (error) { M.emit('error', error.message); }
     return view;
   }
   M.present = state => {
-    let view = views.get(state.id); if (!view) { newView(state.id).then(v => { v.state = state; }); return; }
-    view.state = state;
+    let view = views.get(state.id); if (!view) { newView(state.id).then(v => { if (!v.state) { v.state = state; v.revision++; } dirty(); }); return; }
+    view.state = state; view.revision++;
   };
   function tick() {
+    if (document.hidden) { animation = requestAnimationFrame(tick); return; }
     for (const view of views.values()) {
       const s = view.state; if (!s || !view.ready) continue;
-      const canvas = view.compositor.canvas; canvas.style.display = hidden ? 'none' : 'block'; if (hidden) continue;
-      // Letterbox to the sequence aspect ratio without stretching the composition.
+      const canvas = view.compositor.canvas;
+      const invisible = hidden || document.documentElement.hasAttribute('data-videospace-' + view.id + '-hidden');
+      canvas.style.display = invisible ? 'none' : 'block';
+      if (invisible) { view.painted = -1; continue; }
       const ratio = s.plan.width / s.plan.height; let w = s.width, h = s.height; if (w / h > ratio) w = h * ratio; else h = w / ratio;
       const x = s.x + (s.width - w) / 2, y = s.y + (s.height - h) / 2;
+      const dpr = Math.min(devicePixelRatio || 1, 2), pw = Math.max(2, Math.round(w * dpr)), ph = Math.max(2, Math.round(h * dpr));
+      const resized = canvas.width !== pw || canvas.height !== ph;
+      if (view.painted === view.revision && view.epoch === contentEpoch && !resized) continue;
       canvas.style.left = x + 'px'; canvas.style.top = y + 'px'; canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-      const dpr = Math.min(devicePixelRatio || 1, 2), pw = Math.max(2, Math.round(w * dpr)), ph = Math.max(2, Math.round(h * dpr)); if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
-      view.compositor.draw(s.plan, M.inputs(s.plan, view.id, s.playing, s.rate)); M.diagnostics.frames++;
-      if (view.id === 'program') M.syncAudio(s.plan, s.playing, s.rate);
+      if (resized) { canvas.width = pw; canvas.height = ph; }
+      try {
+        activeSessions.set(view.id, new Set());
+        view.compositor.draw(s.plan, M.inputs(s.plan, view.id, s.playing, s.rate)); M.diagnostics.frames++;
+        view.painted = view.revision; view.epoch = contentEpoch;
+        M.diagnostics.compositor[view.id] = { ...view.compositor.stats };
+        if (view.id === 'program') M.syncAudio(s.plan, s.playing, s.rate);
+      } catch (error) { M.report('Composition: ' + error.message); view.painted = view.revision; view.epoch = contentEpoch; }
     }
-    const now = performance.now(); for (const [key, session] of sessions) if (now - (session.used || 0) > 10000) { session.element.pause(); session.element.removeAttribute('src'); session.element.load(); sessions.delete(key); }
+    const now = performance.now();
+    for (const [key, session] of sessions) if (now - (session.used || 0) > 10000 && !activeSessions.get(key.split(':')[0])?.has(key)) { stopSession(session); sessions.delete(key); }
     animation = requestAnimationFrame(tick);
   }
-  M.hide = value => { hidden = value; for (const view of views.values()) view.compositor.canvas.style.display = value ? 'none' : 'block'; if (value) { for (const node of audioNodes.values()) { node.element?.pause(); if (audioContext) node.gain.gain.setValueAtTime(0, audioContext.currentTime); } } };
-  M.exportStill = async () => { const view = views.get('program'); if (!view?.state || !view.ready) return; try { const canvas = makeCanvas(view.state.plan.width, view.state.plan.height); const compositor = new global.VideoSpaceGPU.Compositor(canvas, M.report); await compositor.initialize(); compositor.draw(view.state.plan, M.inputs(view.state.plan, 'still', false, 1)); if (compositor.device) await compositor.device.queue.onSubmittedWorkDone(); const blob = await new Promise(resolve => compositor.canvas.toBlob(resolve, 'image/png')); if (!blob) throw new Error('Still encoding failed'); M.downloadBlob(blob, 'VideoSpace-frame.png'); compositor.dispose(); M.releaseContext('still'); } catch (error) { M.emit('error', error.message); } };
+  M.hide = value => {
+    hidden = value; dirty();
+    for (const view of views.values()) view.compositor.canvas.style.display = value ? 'none' : 'block';
+    if (value) { for (const session of sessions.values()) session.element.pause(); M.stopAudio('preview'); }
+  };
+  M.exportStill = async () => {
+    const view = views.get('program'); if (!view?.state || !view.ready) return;
+    let compositor;
+    try {
+      const plan = view.state.plan, canvas = makeCanvas(plan.width, plan.height);
+      compositor = new global.VideoSpaceGPU.Compositor(canvas, M.report); await compositor.initialize();
+      const inputs = await global.VideoSpaceOffline.inputs(plan, 'still', new AbortController().signal);
+      compositor.draw(plan, inputs); if (compositor.device) await compositor.device.queue.onSubmittedWorkDone();
+      const blob = await new Promise(resolve => compositor.canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Still encoding failed'); M.downloadBlob(blob, 'VideoSpace-frame.png');
+    } catch (error) { M.emit('error', error.message); }
+    finally { compositor?.dispose(); M.releaseContext('still'); }
+  };
   M.init = async () => {
     if (initialized) return; initialized = true;
     try {
