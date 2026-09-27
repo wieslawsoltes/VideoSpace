@@ -1,0 +1,29 @@
+name: GPU diagnosis
+on:
+  push:
+    branches: [diagnostics/gpu]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci && npx playwright install --with-deps chromium
+      - name: Isolate graphics initialization and capture
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          python3 scripts/serve-site.py --directory . --port 4174 > artifacts/probe-server.log 2>&1 &
+          xvfb-run -a node scripts/probe-gpu.mjs 2>&1 | tee artifacts/gpu-probe.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VideoSpace-gpu-probes
+          path: |
+            artifacts/gpu-probes.json
+            artifacts/gpu-probe.log
