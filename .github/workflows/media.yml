@@ -1,8 +1,6 @@
 name: Media
 on:
-  push:
-    branches: [main, feat/offline-export]
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,11 +21,11 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
-      - name: Prepare fixtures
+      - name: Prepare original fixtures
         run: |
           dotnet run --project tests/VideoSpace.Fixtures -c Release -- artifacts/fixtures
           ffmpeg -y -f lavfi -i 'color=c=0xA94637:s=320x180:r=24:d=2' -f lavfi -i 'sine=frequency=440:sample_rate=48000:duration=2' -c:v libvpx-vp9 -b:v 250k -c:a libopus -shortest artifacts/fixtures/local-video.webm
-      - name: Validate offline codecs and GPU backends
+      - name: Validate offline codecs and renderer selection
         shell: bash
         run: |
           npm run test:plans 2>&1 | tee artifacts/media-unit.log

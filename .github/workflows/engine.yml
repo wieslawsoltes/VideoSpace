@@ -19,3 +19,4 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet run --project tests/VideoSpace.Tests -c Release
+      - run: dotnet run --project tests/VideoSpace.Editing.Tests -c Release

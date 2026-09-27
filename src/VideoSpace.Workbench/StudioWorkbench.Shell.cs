@@ -8,33 +8,80 @@ public sealed partial class StudioWorkbench
 {
     private StudioButton Command(string text, string id, Action action, string? icon = null)
     {
-        var button = new StudioButton(text, () => Run(action), icon, id); _commands[id] = button; return button;
+        var button = new StudioButton(text, () => Run(action), icon, id);
+        _commands[id] = button;
+        return button;
     }
+
     private UIElement BuildMenu()
     {
         var menu = Studio.Row(); menu.Spacing = 0; menu.Margin = new(6, 0, 0, 0);
-        menu.Children.Add(Command("File", "Menu File", () => ShowMenu("File", [("New demo project", () => ConfirmNew()), ("Open project / captions…", () => RunAsync(_media.OpenAsync)), ("Import media…", () => RunAsync(_media.ImportAsync)), ("Save project…", SaveProject), ("Export…", ShowExport)])));
-        menu.Children.Add(Command("Edit", "Menu Edit", () => ShowMenu("Edit", [("Undo", () => Session.Undo()), ("Redo", () => Session.Redo()), ("Add edit at playhead", Split), ("Delete", () => Delete(false)), ("Ripple delete", () => Delete(true)), ("Link selected clips", () => Edit("Link clips", p => TimelineEdits.Link(p, Session.Selection, false))), ("Unlink selected clips", () => Edit("Unlink clips", p => TimelineEdits.Link(p, Session.Selection, true)))])));
-        menu.Children.Add(Command("Clip", "Menu Clip", () => ShowMenu("Clip", [("Insert source", () => InsertSource(false)), ("Overwrite source", () => InsertSource(true)), ("Create title…", NewTitle), ("Apply default fade", () => ApplyPreset("Fade in / out")), ("Enable / disable selected", () => Edit("Toggle clips", p => { foreach (var id in Session.Selection) p.Clip(id).Enabled ^= true; }))])));
-        menu.Children.Add(Command("Sequence", "Menu Sequence", () => ShowMenu("Sequence", [("Sequence settings…", SequenceSettings), ("Add video track", () => AddTrack(TrackKind.Video)), ("Add audio track", () => AddTrack(TrackKind.Audio)), ("Add marker…", AddMarker), ("Clear In / Out", () => Edit("Clear sequence range", p => { p.InPoint = 0; p.OutPoint = null; })), ("Fit timeline", TimelineFit)])));
-        menu.Children.Add(Command("Window", "Menu Window", () => ShowMenu("Window", [("Editing workspace", () => SetWorkspace("Editing")), ("Color workspace", () => SetWorkspace("Color")), ("Audio workspace", () => SetWorkspace("Audio")), ("Captions workspace", () => SetWorkspace("Captions")), ("History panel", () => _projectPanel.Select("History"))])));
+        menu.Children.Add(Command("File", "Menu File", () => ShowMenu("File",
+        [
+            ("New project…", NewProject), ("New demo project", ConfirmNew),
+            ("Open project / captions…", () => RunAsync(_media.OpenAsync)),
+            ("Import media…", () => RunAsync(_media.ImportAsync)),
+            ("Save project…", SaveProject), ("Export…", ShowExport)
+        ])));
+        menu.Children.Add(Command("Edit", "Menu Edit", () => ShowMenu("Edit",
+        [
+            ("Undo", () => Session.Undo()), ("Redo", () => Session.Redo()),
+            ("Copy clips", CopySelection), ("Cut clips", CutSelection), ("Paste clips", PasteSelection),
+            ("Add edit at playhead", Split), ("Delete", () => Delete(false)), ("Ripple delete", () => Delete(true)),
+            ("Link selected clips", () => Edit("Link clips", p => TimelineEdits.Link(p, Session.Selection, false))),
+            ("Unlink selected clips", () => Edit("Unlink clips", p => TimelineEdits.Link(p, Session.Selection, true)))
+        ])));
+        menu.Children.Add(Command("Clip", "Menu Clip", () => ShowMenu("Clip",
+        [
+            ("Insert source", () => InsertSource(false)), ("Overwrite source", () => InsertSource(true)),
+            ("Create title…", NewTitle), ("Apply default fade", () => ApplyPreset("Fade in / out")),
+            ("Enable / disable selected", () => Edit("Toggle clips", p =>
+            {
+                foreach (var id in Session.Selection) { TimelineEdits.RequireUnlocked(p.TrackFor(id)); p.Clip(id).Enabled ^= true; }
+            }))
+        ])));
+        menu.Children.Add(Command("Sequence", "Menu Sequence", () => ShowMenu("Sequence",
+        [
+            ("Sequence settings…", SequenceSettings), ("Add video track", () => AddTrack(TrackKind.Video)),
+            ("Add audio track", () => AddTrack(TrackKind.Audio)), ("Add marker…", AddMarker),
+            ("Clear In / Out", () => Edit("Clear sequence range", p => { p.InPoint = 0; p.OutPoint = null; })),
+            ("Fit timeline", TimelineFit)
+        ])));
+        menu.Children.Add(Command("Window", "Menu Window", () => ShowMenu("Window",
+        [
+            ("Editing workspace", () => SetWorkspace("Editing")), ("Color workspace", () => SetWorkspace("Color")),
+            ("Audio workspace", () => SetWorkspace("Audio")), ("Captions workspace", () => SetWorkspace("Captions")),
+            ("History panel", () => _projectPanel.Select("History"))
+        ])));
         menu.Children.Add(Command("Help", "Help", ShowHelp));
         return menu;
     }
+
     private UIElement BuildNavigation()
     {
         var row = Studio.Columns(new(300), Studio.Star(), new(376)); row.Margin = new(12, 0, 12, 0);
-        var brand = new Border { Background = Studio.Brush("#292951"), BorderBrush = Studio.Brush("#8582CD"), BorderThickness = new(1), Width = 28, Height = 28, CornerRadius = new(4), Child = new TextBlock { Text = "Vs", FontSize = 16, FontFamily = Studio.Font, Foreground = Studio.Brush("#C8C5FF"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-        var left = Studio.Row(brand, Command("Import", "Import", () => RunAsync(_media.ImportAsync)), Command("Edit", "Edit workspace", () => SetWorkspace("Editing")), Command("Export", "Export", ShowExport)); left.Spacing = 12; Studio.At(row, left);
+        var brand = new Border
+        {
+            Background = Studio.Brush("#292951"), BorderBrush = Studio.Brush("#8582CD"), BorderThickness = new(1), Width = 28, Height = 28, CornerRadius = new(4),
+            Child = new TextBlock { Text = "Vs", FontSize = 16, FontFamily = Studio.Font, Foreground = Studio.Brush("#C8C5FF"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+        var left = Studio.Row(brand, Command("Import", "Import", () => RunAsync(_media.ImportAsync)), Command("Edit", "Edit workspace", () => SetWorkspace("Editing")), Command("Export", "Export", ShowExport));
+        left.Spacing = 12; Studio.At(row, left);
         _projectTitle.HorizontalAlignment = HorizontalAlignment.Center; Studio.At(row, _projectTitle, column: 1);
         var workspaces = Studio.Row(); workspaces.HorizontalAlignment = HorizontalAlignment.Right;
         foreach (var name in new[] { "Editing", "Color", "Effects", "Audio", "Captions" }) workspaces.Children.Add(Command(name, "Workspace " + name, () => SetWorkspace(name)));
-        Studio.At(row, workspaces, column: 2); return row;
+        Studio.At(row, workspaces, column: 2);
+        return row;
     }
+
     private UIElement BuildTools()
     {
         var stack = new StackPanel { Spacing = 1, Margin = new(3, 6, 2, 0) };
-        var icons = new Dictionary<EditTool, string> { [EditTool.Selection] = "select", [EditTool.Razor] = "razor", [EditTool.Ripple] = "ripple", [EditTool.Rolling] = "roll", [EditTool.Slip] = "slip", [EditTool.RateStretch] = "stretch", [EditTool.Hand] = "hand" };
+        var icons = new Dictionary<EditTool, string>
+        {
+            [EditTool.Selection] = "select", [EditTool.Razor] = "razor", [EditTool.Ripple] = "ripple", [EditTool.Rolling] = "roll",
+            [EditTool.Slip] = "slip", [EditTool.RateStretch] = "stretch", [EditTool.Hand] = "hand"
+        };
         foreach (var (tool, icon) in icons) stack.Children.Add(Command("", "Tool " + tool, () => { Session.Tool = tool; Session.Notify(); }, icon));
         stack.Children.Add(new Border { Height = 1, Background = Studio.Brush("#45484E"), Margin = new(5, 6, 5, 5) });
         stack.Children.Add(Command("", "Snapping", () => { Session.Snapping ^= true; Session.Notify(); }, "snap"));
@@ -43,6 +90,7 @@ public sealed partial class StudioWorkbench
         stack.Children.Add(Command("", "Zoom out", () => Timeline.Zoom(1 / 1.35), "minus"));
         return new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     }
+
     private void SetWorkspace(string workspace)
     {
         _workspace = workspace;
@@ -53,12 +101,18 @@ public sealed partial class StudioWorkbench
         BuildInspector(); ShowStatus(workspace + " workspace");
     }
     private void Edit(string name, Action<VideoProject> edit) => Run(() => { Session.Execute(name, edit); ShowStatus(name); });
-    private void Seek(long frame) { Session.Playing = false; Session.Seek(frame); _playPosition = Session.Playhead; }
+    private void Seek(long frame)
+    {
+        Session.Playing = false; Session.Seek(frame); _playPosition = Session.Playhead;
+        _selectedSignature = "__seek__"; RefreshPanels();
+    }
     private void TogglePlayback()
     {
-        if (_dialogOpen || _exporting) return; _media.UnlockAudio();
+        if (_dialogOpen || _exporting) return;
+        _media.UnlockAudio();
         if (!Session.Playing && Session.Playhead >= Session.Project.Duration - 1) { Session.Playhead = 0; _playPosition = 0; }
-        Session.Playing ^= true; Session.PlaybackRate = 1; _playPosition = Session.Playhead; _lastTime = _clock.Elapsed.TotalSeconds; _sourcePlaying = false; RefreshFrames();
+        Session.Playing ^= true; Session.PlaybackRate = 1; _playPosition = Session.Playhead;
+        _lastTime = _clock.Elapsed.TotalSeconds; _sourcePlaying = false; RefreshFrames();
     }
     private void ProgramCommand(string command)
     {
@@ -90,7 +144,9 @@ public sealed partial class StudioWorkbench
     private void OpenSource(string id)
     {
         if (!Session.Project.Assets.Any(a => a.Id == id)) return;
-        _sourceAsset = id; _sourcePosition = 0; _sourceIn = 0; _sourceOut = Math.Min(SourceLength, Session.Project.FrameRate.Frames(10)); _sourcePlaying = false; _sourcePanel.Select("Source"); RefreshFrames();
+        _sourceAsset = id; _sourcePosition = 0; _sourceIn = 0;
+        _sourceOut = Math.Min(SourceLength, Session.Project.FrameRate.Frames(10));
+        _sourcePlaying = false; _sourcePanel.Select("Source"); RefreshFrames();
     }
     private void TimelineFit() => Timeline.Fit();
     private void SaveProject() => RunAsync(() => _media.SaveTextAsync(ProjectFile.Save(Session.Project), SafeName(Session.Project.Name) + ProjectFile.Extension));
@@ -100,7 +156,11 @@ public sealed partial class StudioWorkbench
         var ids = Session.Selection.Count > 0 ? Session.Selection.ToArray() : Session.Project.Tracks.Where(t => !t.Locked).SelectMany(t => t.Clips).Where(c => c.Contains(Session.Playhead)).Select(c => c.Id).ToArray();
         Edit("Add edit", p => TimelineEdits.Split(p, ids, Session.Playhead));
     }
-    private void Delete(bool ripple) { var ids = Session.Selection.ToArray(); if (ids.Length > 0) Edit(ripple ? "Ripple delete" : "Delete clips", p => TimelineEdits.Delete(p, ids, ripple)); }
+    private void Delete(bool ripple)
+    {
+        var ids = Session.Selection.ToArray();
+        if (ids.Length > 0) Edit(ripple ? "Ripple delete" : "Delete clips", p => TimelineEdits.Delete(p, ids, ripple));
+    }
     private void ApplyPreset(string name)
     {
         if (Session.Selection.Count == 0) { ShowStatus("Select a timeline clip first.", true); return; }
@@ -111,11 +171,13 @@ public sealed partial class StudioWorkbench
     {
         Run(() =>
         {
-            var asset = Session.Project.Asset(assetId); var chosen = Session.Project.Tracks.FirstOrDefault(t => t.Id == trackId);
+            var asset = Session.Project.Asset(assetId);
+            var chosen = Session.Project.Tracks.FirstOrDefault(t => t.Id == trackId);
             bool audioOnly = asset.Kind == MediaKind.Audio;
             if (chosen is null || (audioOnly && chosen.Kind != TrackKind.Audio) || (!audioOnly && chosen.Kind == TrackKind.Audio)) chosen = Session.Project.Tracks.FirstOrDefault(t => t.Kind == (audioOnly ? TrackKind.Audio : TrackKind.Video) && !t.Locked);
             if (chosen is null) throw new InvalidOperationException("Add an unlocked compatible track first.");
             long available = Session.Project.FrameRate.Frames(asset.DurationSeconds), from = sourceRange ? _sourceIn : 0;
+            if (from >= available) throw new InvalidOperationException("The source In point is beyond the available media.");
             long duration = Math.Max(1, Math.Min(available - from, sourceRange ? _sourceOut - _sourceIn : Session.Project.FrameRate.Frames(Math.Min(10, asset.DurationSeconds))));
             string? inserted = null;
             Session.Execute(overwrite ? "Overwrite source" : "Insert source", p =>
@@ -145,6 +207,10 @@ public sealed partial class StudioWorkbench
             {
                 switch (e.Key)
                 {
+                    case VirtualKey.N: NewProject(); break;
+                    case VirtualKey.C: CopySelection(); break;
+                    case VirtualKey.X: CutSelection(); break;
+                    case VirtualKey.V: PasteSelection(); break;
                     case VirtualKey.S: SaveProject(); break;
                     case VirtualKey.O: RunAsync(_media.OpenAsync); break;
                     case VirtualKey.I: RunAsync(_media.ImportAsync); break;

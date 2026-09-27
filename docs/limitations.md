@@ -1,28 +1,36 @@
 # Capability and parity ledger
 
-A familiar layout does not imply complete Adobe Premiere Pro compatibility.
+Version 0.2.0-alpha.1 is a working nonlinear editing subset, not complete Adobe Premiere Pro compatibility.
 
-| Area | Initial alpha boundary |
+| Area | Current boundary |
 | --- | --- |
-| UI | Premiere-style conventions, not verified pixel identity; original branding/assets |
+| UI | Custom Premiere-style workbench, not verified pixel identity; original branding/assets |
 | Native media | Images/titles/generators; no native video decode/encode or live audio |
-| Browser formats | Browser decoders; no professional codec suite or arbitrary MXF/RAW guarantee |
-| Precision | Integer edits; browser seeks/recording not universally frame-accurate |
-| Video export | Real-time WebM, 10-minute/512 MB bounds, no offline render queue |
-| Color | SDR approximation, no HDR/ACES/ICC/OCIO |
-| GPU loss | Errors surfaced; automatic reconstruction absent |
-| Canvas fallback | No temperature/vignette; cross-backend color identity not guaranteed |
-| Timeline scale | Lists/snapshot history/culling; no persistent interval index |
-| Transitions | Clip opacity/audio fades only |
-| Interchange | Native JSON/SRT and first-track cuts-only EDL; no `.prproj`/AAF/Final Cut XML |
-| Audio | Gain/pan/mute/solo; no buses, plug-ins or native live output |
-| WAV | Generated audio only; imported audio rejected |
-| Graphics | Basic text titles, not a complete motion-graphics designer |
-| Captions | Basic timed text/SRT; no speech recognition or full styling |
-| Recovery | Quota-dependent browser media; manifests omit bytes; native image recovery incomplete |
-| Docking | Resizable fixed regions/tabs, not arbitrary floating-window docking |
-| Advanced NLE | No multicam/nesting/proxies/masks/tracking/stabilization/adjustment layers/collaboration |
+| Browser formats | Delegated to browser decoders; no arbitrary MXF/RAW/professional codec guarantee |
+| Offline output | Explicit per-frame WebCodecs timestamps and sample-addressed stereo mixing; VP9/VP8 + Opus WebM |
+| Source-frame precision | Media-element seeks, not full demux/sample-indexed decoding; VFR source selection remains browser-dependent |
+| Export limits | Ten-minute range; 256 MB encoded packets; 128 MB compressed audio per input; 256 MB decoded audio total |
+| Older recording path | Experimental real-time MediaRecorder module, not the supported Export-panel implementation |
+| Color | SDR approximation, not HDR/ACES/ICC/OCIO |
+| GPU selection | Hardware WebGPU preferred; reported software adapters use WebGL2; forced software WebGPU is diagnostic only |
+| GPU device loss | Surfaced rather than silently exporting blank frames; automatic reconstruction is not complete |
+| Canvas fallback | Reduced preview; offline export rejects it to avoid silently dropping grading |
+| Clipboard | Value-owned clips/effects/gaps/links; session-local; matching timebase required; media bytes not copied |
+| Project creation | Blank dimensions/rational rate supported; retiming a populated sequence is not implicit |
+| Timeline scale | Lists, snapshot history and draw-time culling; no persistent interval index |
+| Transitions | Clip opacity/audio fades only, no complete transition-object system |
+| Interchange | Native JSON, SRT and first-track cuts-only EDL; no .prproj/AAF/Final Cut XML |
+| Audio | Gain/pan/mute/solo and offline stereo mix; no buses, plug-ins, loudness conform or native live output |
+| WAV | Managed generated audio only; imported audio is included in offline WebM instead |
+| Graphics/captions | Basic titles and timed text; no complete motion-graphics, typography or transcription system |
+| Recovery | Quota-dependent browser media; manifests omit bytes; native image-byte recovery remains incomplete |
+| Docking | Adjustable fixed regions/tabs; no arbitrary floating/multi-window docking |
+| Advanced NLE | No multicam, nesting, proxies, masks, tracking, stabilization, adjustment layers or collaboration |
 
-Validation is scoped. Browser acceptance uses actual Uno input and original generated media, then independent output decoding. Headless GPU checks may use software adapters. Desktop compilation does not certify all hardware or media paths. Consult Actions for the exact tested commit.
+## Validation scope
 
-Future priorities include permissively licensed native media adapters, deterministic offline encoding, explicit transitions/nesting, color management, delta-based indexed editing and stronger portable-media identity. Interfaces/buttons alone do not mark these complete.
+The engine/evaluator checks are deterministic. Browser acceptance uses actual Uno input and rendered-pixel assertions; media checks decode original synthetic fixtures and encoded output with independent tools. Pages verification checks the deployed commit and reruns UI acceptance on the public URL. Desktop builds test compilation, not a complete native media workflow.
+
+A software WebGPU device on the Linux CI environment failed even a minimal canvas clear across multiple Chrome configurations. Automatic selection therefore chooses the supported WebGL2 path for reported software adapters. Hardware WebGPU remains implemented but is not certified by those software-runner tests. Do not describe a WebGL2 test as a physical WebGPU test.
+
+Future work includes permissively licensed native media adapters, frame-indexed demux/decode, transitions/nesting, color management, indexed/delta editing and portable media packaging. An interface or menu item alone does not mark these features complete.
