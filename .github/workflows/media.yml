@@ -1,0 +1,42 @@
+name: Media
+on:
+  push:
+    branches: [main, feat/offline-export]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  codecs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+      - name: Prepare fixtures
+        run: |
+          dotnet run --project tests/VideoSpace.Fixtures -c Release -- artifacts/fixtures
+          ffmpeg -y -f lavfi -i 'color=c=0xA94637:s=320x180:r=24:d=2' -f lavfi -i 'sine=frequency=440:sample_rate=48000:duration=2' -c:v libvpx-vp9 -b:v 250k -c:a libopus -shortest artifacts/fixtures/local-video.webm
+      - name: Validate offline codecs and GPU backends
+        shell: bash
+        run: |
+          npm run test:plans 2>&1 | tee artifacts/media-unit.log
+          python3 scripts/serve-site.py --directory . --port 4174 > artifacts/media-server.log 2>&1 &
+          npx playwright test -c playwright.media.config.mjs 2>&1 | tee artifacts/media-browser.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VideoSpace-offline-validation
+          path: |
+            artifacts/media-*.log
+            artifacts/offline-*.webm
