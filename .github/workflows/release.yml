@@ -1,0 +1,95 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Toolchain
+        run: |
+          dotnet workload install wasm-tools --skip-manifest-update
+          python3 scripts/fetch-assets.py
+          npm ci
+      - name: Validate and package
+        shell: bash
+        run: |
+          VERSION="$(python3 -c "import xml.etree.ElementTree as E; print(E.parse('Directory.Build.props').find('.//Version').text)")"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || exit 1
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          dotnet run --project tests/VideoSpace.Tests -c Release
+          dotnet run --project tests/VideoSpace.Fixtures -c Release -- artifacts/fixtures
+          npm run test:plans
+          mkdir -p artifacts/packages
+          for name in Core Editing Timeline Effects Audio Documents Rendering Media Controls Workbench; do
+            dotnet pack "src/VideoSpace.$name/VideoSpace.$name.csproj" -c Release -p:Version="$VERSION" -o artifacts/packages
+          done
+          git archive --format=zip --output="artifacts/VideoSpace-${VERSION}-source.zip" HEAD
+      - name: Browser archive
+        run: |
+          dotnet publish src/VideoSpace.App -f net10.0-browserwasm -c Release -p:Version="$VERSION" -o artifacts/publish -p:WasmShellWebAppBasePath=/VideoSpace/
+          python3 scripts/collect-site.py artifacts/publish artifacts/site
+          cd artifacts/site && zip -qr "../VideoSpace-${VERSION}-browser.zip" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoSpace-release-packages
+          path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
+            artifacts/VideoSpace-*.zip
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - run: python3 scripts/fetch-assets.py
+      - run: dotnet publish src/VideoSpace.App -f net10.0-desktop -c Release -r ${{ matrix.rid }} --self-contained true -p:VideoSpaceDesktopOnly=true -o artifacts/native
+      - run: python3 -c "import shutil; shutil.make_archive('artifacts/VideoSpace-${{ matrix.rid }}', 'zip', 'artifacts/native')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoSpace-${{ matrix.rid }}
+          path: artifacts/VideoSpace-*.zip
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [packages, native]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish prerelease assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mapfile -d '' assets < <(find dist -type f \( -name '*.zip' -o -name '*.nupkg' -o -name '*.snupkg' \) -print0)
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --prerelease --generate-notes --title "VideoSpace $GITHUB_REF_NAME"
