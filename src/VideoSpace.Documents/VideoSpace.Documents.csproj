@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>Validated project manifests, SRT captions and CMX3600 edit-decision interchange.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../VideoSpace.Core/VideoSpace.Core.csproj" /></ItemGroup></Project>

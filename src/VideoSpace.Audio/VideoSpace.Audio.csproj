@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>PCM mixing, waveform reduction, metering and WAV export without native codec dependencies.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../VideoSpace.Effects/VideoSpace.Effects.csproj" /></ItemGroup></Project>

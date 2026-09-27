@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>Keyframed video/audio evaluation and backend-independent composition plans.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../VideoSpace.Core/VideoSpace.Core.csproj" /></ItemGroup></Project>

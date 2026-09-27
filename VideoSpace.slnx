@@ -1,0 +1,16 @@
+<Solution>
+ <Folder Name="/Libraries/">
+  <Project Path="src/VideoSpace.Core/VideoSpace.Core.csproj" />
+  <Project Path="src/VideoSpace.Editing/VideoSpace.Editing.csproj" />
+  <Project Path="src/VideoSpace.Timeline/VideoSpace.Timeline.csproj" />
+  <Project Path="src/VideoSpace.Effects/VideoSpace.Effects.csproj" />
+  <Project Path="src/VideoSpace.Audio/VideoSpace.Audio.csproj" />
+  <Project Path="src/VideoSpace.Documents/VideoSpace.Documents.csproj" />
+  <Project Path="src/VideoSpace.Rendering/VideoSpace.Rendering.csproj" />
+  <Project Path="src/VideoSpace.Media/VideoSpace.Media.csproj" />
+  <Project Path="src/VideoSpace.Controls/VideoSpace.Controls.csproj" />
+  <Project Path="src/VideoSpace.Workbench/VideoSpace.Workbench.csproj" />
+ </Folder>
+ <Project Path="src/VideoSpace.App/VideoSpace.App.csproj" />
+ <Project Path="tests/VideoSpace.Tests/VideoSpace.Tests.csproj" />
+</Solution>

@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>Virtualized timeline geometry, hit testing and frame snapping.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../VideoSpace.Core/VideoSpace.Core.csproj" /></ItemGroup></Project>
