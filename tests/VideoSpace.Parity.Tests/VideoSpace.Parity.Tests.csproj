@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/VideoSpace.Editing/VideoSpace.Editing.csproj" /><ProjectReference Include="../../src/VideoSpace.Audio/VideoSpace.Audio.csproj" /><ProjectReference Include="../../src/VideoSpace.Timeline/VideoSpace.Timeline.csproj" /></ItemGroup>
+</Project>
