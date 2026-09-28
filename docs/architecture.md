@@ -2,59 +2,56 @@
 
 ```mermaid
 flowchart TD
-  UI[Custom Uno workbench] --> Session[Transactional EditorSession]
-  Session --> Model[Integer-frame VideoProject]
-  Model --> Plan[Evaluated FramePlan]
-  Plan --> Native[Host-owned Skia canvas]
-  Plan --> Browser[Browser media adapter]
-  Files[Local media files] --> Store[IndexedDB / Blob URLs]
-  Store --> Decode[Browser decoders]
-  Decode --> GPU[Hardware WebGPU / WebGL2 compositor]
+  UI[Custom Uno workbench] --> Session[Root EditorSession transactions]
+  Session --> Index[Revision-scoped project and track indexes]
+  Index --> Plan[Prepared recursive frame planner]
+  Index --> Mix[Prepared sample-clock audio graph]
+  Plan --> Native[Host-owned Skia graph]
+  Plan --> GPU[Single-context WebGPU / WebGL2 graph]
+  Files[Local Blob media] --> Packet[Bounded WebM packet index]
+  Packet --> Decoder[VideoDecoder and frame leases]
+  Files --> Browser[Browser-seeking fallback]
+  Decoder --> GPU
   Browser --> GPU
-  Decode --> LiveAudio[Web Audio preview]
-  Model --> Offline[Offline frame and sample scheduler]
-  Offline --> GPU
-  GPU --> VideoEncoder[WebCodecs VP9 / VP8]
-  Decode --> PCM[Bounded decoded PCM]
-  PCM --> Mix[Sample-addressed stereo mixer]
-  Offline --> Mix
-  Mix --> Opus[WebCodecs Opus]
-  VideoEncoder --> WebM[Original bounded WebM muxer]
-  Opus --> WebM
+  Mix --> PCM[Bounded stereo PCM]
+  GPU --> Encoder[Offline VideoEncoder]
+  PCM --> AudioEncoder[Opus AudioEncoder]
+  Encoder --> Mux[Original WebM muxer]
+  AudioEncoder --> Mux
 ```
 
-## Editing authority
+## Authority, identity and time
 
-The C# session is the editing authority. Browser modules receive evaluated layers and host presentation rectangles; they do not issue project mutations through a test endpoint. Compressed media remains outside the managed heap. Small thumbnails and waveform peaks may cross the interop boundary. Read-only diagnostics expose control geometry and project state for actual pointer/keyboard tests.
+The C# session owns all user-visible editing. Browser modules receive evaluated plans and presentation rectangles, not mutation authority. Read-only control/state snapshots let tests locate a Skia-rendered UI; actual pointer and keyboard events execute commands.
 
-A timeline coordinate is an integer frame at an exact rational rate. A clip occupies `[Start, Start + Duration)`. Source offsets are seconds so different source rates do not change edit arithmetic. Drop-frame timecode changes numbering, not the frame count. Preview advances from a monotonic clock; reverse shuttle seeks without reverse audio and does not promise universal source-frame precision.
+Timeline positions are integer frames at a rational rate; source positions are seconds. Clip ranges are half-open. `AnimatedValue.FrameOffset` preserves the original curve's local time during split/trim, avoiding interpolation rebaking. Transition objects refer to adjacent clip identities and obtain overlap from validated source handles. Structural edits maintain references or remove detached transitions; invalid handles reject the transaction.
 
-EditorSession snapshots, mutates, validates, then records bounded history. A failed mutation restores the predecessor. Pointer drags preview until release and create one transaction. Validation enforces references, identifiers, dimensions, finite values, source handles, nonoverlap and sorted keyframes. Locked tracks reject edits. Guarded ripple refuses to cross unselected material instead of silently choosing a destructive synchronization policy.
+The session has one root document and a child navigation path. Mutations target the active sequence, but snapshots/save/recovery contain the root. Undo repairs a path whose ancestor was removed. Nesting retains editable tracks, markers, captions, transitions and audio; unnesting rejects cases that cannot preserve the composed result. Manually synchronized camera groups reference 2–16 local sources and store camera cuts as held integer-valued keys.
 
-TimelineClipboard owns value copies, not references to mutable source clips. Paste restores necessary track/asset metadata, preserves relative coordinates and keyframes, maps new clip/link identifiers and writes occupied ranges inside a single transaction. Cross-timebase paste rejects implicit rounding. Source bytes remain host-owned.
+## Prepared execution
 
-The initial model uses lists, draw-time culling and serialized history. It is not a persistent interval-indexed timeline or structural-delta journal.
+`ProjectIndex` owns read dictionaries and sorted clip/transition intervals for one revision. `PreparedFramePlanner` uses binary active-range lookup and memoizes one evaluated frame. Interactive hosts must reuse it until the session index changes. Recursive plans are bounded before bridge serialization.
 
-## Rendering
+`PreparedAudioMixer` compiles nested time maps, gain/pan stages, camera selectors and transition envelopes. Interval queries visit voices overlapping the sample block. The JavaScript evaluator/mixer is compared against independent C# fixtures at boundaries and fractional sample-clock positions.
 
-FramePlanner emits visual layers bottom-to-top and audio subject to mute/solo, sampled clip-local keyframes and fades. WebGPU caches per-layer textures, uniform buffers and bind groups; external source images upload without C# readback. WebGL2 supplies the corresponding transform/crop/alpha/SDR grade path. Reported software adapters choose WebGL2 instead of a software WebGPU device. Hardware WebGPU remains the preferred path; `gpu=force` exists for explicit diagnosis.
+The editing model still uses lists and bounded snapshot history. Read indexing is not a persistent structural-delta editing engine. See [performance](performance.md) for benchmark scope and lifetime rules.
 
-A minimal WebGPU canvas clear failed on the Linux software runner, independently of application shaders. CI records the actual selected adapter/backend rather than describing fallback validation as physical GPU validation. Graphics errors are surfaced instead of silently exporting missing layers. Full automatic device reconstruction remains future work.
+## Compositing
 
-Native composition uses Uno's host-owned Skia canvas, not native WebGPU. It supports generated footage, titles and images. Native video decode, native live audio and native video encoding remain absent. Color correction is SDR parameter grading, not ACES/HDR/ICC/OCIO. Canvas 2D is a reduced preview fallback; offline export rejects it rather than dropping grading effects.
+The browser graph isolates nested sequences and transition inputs in same-device render targets. Premultiplied-alpha blending preserves lower layers correctly. Source textures, targets, uniform buffers and bind groups have explicit lifetimes; unchanged source versions skip uploads. Hardware WebGPU is preferred, WebGL2 is the supported software-adapter fallback, and Canvas 2D is reduced preview only.
 
-## Offline export
+Native Skia renders the same nested/transition plan using host-owned graphics resources. Images, text and generated sources work there; native video codecs and live audio remain absent. Pixel tests cover simple transition/alpha/nesting cases. The SDR grading pipeline is not a professional color-managed HDR system or a claim of universal cross-backend pixel identity.
 
-The JavaScript evaluator is compared field-by-field with independent C# frame-plan fixtures. Offline export evaluates every sequence frame in the chosen In/Out range and gives VideoEncoder an explicit integer-microsecond timestamp/duration. Source readiness is awaited, encoder queues are bounded, and VideoFrame instances close immediately after enqueueing.
+## Indexed media and export
 
-Imported audio is decoded within explicit compressed/PCM budgets. The mixer computes sample-addressed stereo output, linear source interpolation, clip speed, keyframed gain, fades, mute/solo and pan. AudioData uses planar float32 samples and explicit timestamps. Queue backpressure does not flush Opus mid-stream: flushing pads a codec packet and can disrupt continuous packetization. Both encoders flush only at completion.
+The original EBML index stores metadata, timestamps, keyframe positions and zero-copy packet subarrays. The source adapter supports a bounded single-video VP8/VP9 subset. Frame selection searches actual presentation intervals; the decoder must output the matching timestamp. Backward misses restart from keyframes. Flush, cancellation and decoded-frame eviction are explicit.
 
-The original WebM muxer writes EBML headers, VP8/VP9 and Opus tracks, microsecond-scale timestamps, clusters, cue points, codec delay and discard padding. It bounds packet bytes/count and refuses missing encoder output. Cancellation closes codecs, releases sources and discards partial output without modifying the editing model.
+A returned bitmap lease remains valid even if subsequent requests evict its decoded frame. The caller releases leases after source uploads. Unsupported containers/features use a recorded browser-seeking fallback; unsupported or corrupt decoder output is never labeled exact merely because export continued. `lastExport.indexedDecode` and `sourceFallbacks` distinguish these paths.
 
-This guarantees an explicit output schedule, not exact source-frame selection for arbitrary containers. Source video still uses browser media-element seeks rather than a full indexed demux/VideoDecoder implementation. The old real-time MediaRecorder module remains experimental; the workbench routes Export to the offline implementation.
+Offline export prepares the graph once, requests each output frame and submits explicit video timestamps/durations. Only audio voices intersecting In/Out require source decoding. PCM still decodes whole supported inputs within budgets; streaming audio decode is not implemented. Output queues and muxed payloads are bounded. Cancellation discards incomplete output without changing edits.
 
-## Persistence and interchange
+## Storage and interchange
 
-IndexedDB stores manifests and imported files; quota/write errors surface. Exported manifests do not contain media bytes. Offline filename/length matches can relink sources, but are not cryptographic identity checks. Native recovery uses a temporary manifest followed by rename and does not restore imported image bytes automatically.
+IndexedDB stores browser media and manifests locally. Quota failures surface. Saved native manifests include nested edits but not media bytes; filename/byte-length matching is the current relink policy, not cryptographic identity. Native recovery retains manifests, not all imported source bytes.
 
-SRT preserves timed captions. EDL represents cuts on the first video track, rejects speed changes and does not flatten layered effects. Managed WAV export supports generated sound and rejects imported sources; offline WebM mixes imported audio.
+Native JSON is the lossless editing format. SRT exports active-sequence captions. First-track cuts-only EDL rejects transitions, nested sequences, camera groups and speed changes. It is not a flattened final movie or Adobe project interchange.

@@ -92,5 +92,7 @@ test('paused preview performs no redundant uploads or frame evaluations',async({
   expect(after).toEqual(before);
   await click(page,'program Next frame');
   await expect.poll(async()=>(await stats()).frames).toBeGreaterThan(before.frames);
-  expect((await state(page)).playhead).toBe(97);
+  // The GPU presents immediately; the read-only C# snapshot is published at 5 Hz.
+  // Await its observable update rather than racing the presentation callback.
+  await expect.poll(async()=>(await state(page)).playhead).toBe(97);
 });

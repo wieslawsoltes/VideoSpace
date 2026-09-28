@@ -1,8 +1,8 @@
 # Reusable libraries
 
-## Headless C# editing
+The Core, Editing, Timeline, Effects, Audio and Documents packages target .NET 10 without Uno. Rendering adds Skia; Media/Controls/Workbench integrate the browser/native Uno hosts. All ten projects are packable; public-feed publication is a separate release operation.
 
-Core, Editing, Timeline, Effects, Audio and Documents target .NET 10 without Uno dependencies.
+## Transactional editing and prepared frames
 
 ```csharp
 using VideoSpace.Core;
@@ -10,54 +10,70 @@ using VideoSpace.Editing;
 using VideoSpace.Effects;
 
 var session = new EditorSession(SampleProject.Create());
-session.Execute("Split", project =>
-    TimelineEdits.Split(project, ["ridge-cut"], frame: 96));
+session.Execute("Dissolve", project =>
+    TransitionEdits.Add(project, "ridge-cut", TransitionKind.CrossDissolve, 48));
 
-var clipboard = new TimelineClipboard();
-clipboard.Copy(session.Project, ["title-cut", "credit-cut"]);
-session.Execute("Paste graphics", project => clipboard.Paste(project, at: 500));
-
-FramePlan frame = FramePlanner.Evaluate(session.Project, frame: 550);
+var planner = new PreparedFramePlanner(session.Index);
+FramePlan frame = planner.Evaluate(240);
+// Reuse planner until session.Index changes. Do not mutate its project directly.
 session.Undo();
 ```
 
-Use transactions for user-visible edits. Direct construction is appropriate before creating a session. Start/Duration are sequence frames; SourceIn is seconds. Audio belongs on explicit audio-track clips, with related clip IDs linked through TimelineEdits.Link. Clipboard data contains metadata, not media bytes. Cross-timebase pastes reject silent rounding.
+`SourceIn` is seconds; timeline `Start`/`Duration` use sequence frames. Imported sound belongs on explicit audio clips. Link related clip IDs through `TimelineEdits.Link`. Mutations inside `Execute` validate and either commit atomically or restore the previous root document.
 
-## Uno embedding and native drawing
-
-Merge StudioTheme after XamlControlsResources and reference VideoSpace.Workbench:
+## Nesting and camera sources
 
 ```csharp
-using VideoSpace.Media;
-using VideoSpace.Workbench;
-
-window.Content = new StudioWorkbench(
-    new EditorSession(SampleProject.Create()),
-    new MediaServices());
+string[] nested = [];
+session.Execute("Nest selection", p => nested = SequenceEdits.Nest(
+    p, p.Tracks.SelectMany(t => t.Clips).Select(c => c.Id), "Compound"));
+session.OpenSequence(session.Project.Clip(nested[0]).AssetId);
+// Edits target the child; RootProject remains the persistence authority.
+session.NavigateUp();
 ```
 
-Include all `VideoSpace.Media/Web/*.js` as browser embedded resources as demonstrated by the App project. The bridge uses explicit JSON-only named JavaScript imports. Dispose the workbench during teardown. Supply a suitable font/typeface before constructing controls.
+`SequenceEdits.CreateMulticam` accepts `CameraAngle` records with source identifiers and offsets. `SwitchCamera` writes held angle keys at the playhead. Source-handle and audio-policy validation is part of the model, not just the workbench.
 
-Controls can be reused individually: PanelHost, SplitHandle, TimelineView, MonitorView, ProjectBinView, ValueField, TimecodeField, AudioMeterView, AssetThumbnail and StudioButton. PanelHost separates stable tab keys from captions through SetCaption. Low-level input, focus, accessibility and text editing still use Uno primitives.
+## Audio
 
-FrameRenderer.Draw targets a host-owned Skia canvas. Png encodes a evaluated composition; SetImage supplies image data. A media identifier alone is not a decoder. The host owns the native graphics context; native video decode/encode and live audio adapters are not bundled.
+```csharp
+using VideoSpace.Audio;
 
-## Standalone browser graphics and export
+var mixer = new PreparedAudioMixer(session.Project);
+var stereo = new float[960 * 2];
+mixer.Mix(new Dictionary<string, PcmAudio>(), firstSample: 48000,
+    sampleRate: 48000, stereo);
+```
+
+The empty dictionary supports generated tone sources only. Supply decoded `PcmAudio` for imported sources; missing active PCM rejects rather than silently producing silence. Reuse the compiled mixer for unchanged projects. Caller owns the PCM arrays.
+
+## Uno controls and Skia rendering
+
+Merge `VideoSpace.Controls.StudioTheme` after `XamlControlsResources`, then embed `StudioWorkbench` with an `EditorSession` and `MediaServices`. Include all `VideoSpace.Media/Web/*.js` as browser embedded resources, as the App project demonstrates. Dispose host resources on teardown. Individual timelines, monitors, panels, bins, numeric/timecode fields and icons can be used independently.
+
+`FrameRenderer.Draw` renders into a host-owned Skia canvas. `SetImage` supplies image data; `Png` encodes a plan. Source identifiers alone are not a video decoder. Low-level focus, accessibility and text input continue to use Uno primitives.
+
+## JavaScript packet index and decoder
 
 ```javascript
-const compositor = new VideoSpaceGPU.Compositor(canvas, console.warn);
-await compositor.initialize();
-compositor.draw(framePlan, [
-  { layer: framePlan.layers[0], source: decodedVideoElement }
-]);
-compositor.dispose();
+const index = new VideoSpaceWebMIndex.Index(new Uint8Array(webmBytes));
+const decoder = await VideoSpaceIndexedVideo.Decoder.open(index);
+try {
+  const lease = await decoder.frame(1.25, abortSignal);
+  try {
+    context2d.drawImage(lease.source, 0, 0);
+    console.log(lease.timestamp); // Selected source presentation time, microseconds.
+  } finally {
+    lease.release();
+  }
+} finally {
+  decoder.dispose();
+}
 ```
 
-Plans use camelCase JSON matching the C# records. Sources must be decoded and origin-clean. Automatic selection prefers hardware WebGPU and selects WebGL2 for reported software adapters. Canvas 2D is reduced preview only.
+Load WebMIndex.js before creating an IndexedVideo decoder. The parser itself has no DOM dependency. Keep the indexed bytes alive while the index/decoder is used, serialize requests per decoder, and release every returned lease. Unsupported indexed formats have a distinct error type. The export-scoped `Sources` pool provides bounded local-Blob fallback decisions.
 
-WebM.js exposes `VideoSpaceWebM.Muxer`, accepting encoded VP8/VP9 and Opus chunks. OfflineExport.js exposes `VideoSpaceOffline.mix`, `inputs`, `run` and `cancel`. The mixer consumes host-decoded AudioBuffers; run combines the project evaluator, local media adapter, compositor and WebCodecs, emitting progress and downloading a completed WebM. Media.js supplies browser files/decoders/storage. These modules are MIT licensed and independent of the Uno workbench, but they are not a universal professional codec suite.
-
-An offline output frame schedule does not remove browser source-seek limitations. Keep source decoding, encoding capability checks, cancellation and memory budgets explicit in another host.
+The compositor accepts origin-clean decoded inputs and recursive plans. Hosts can use `VideoSpaceGPU.Compositor` without Uno; `draw` does not transfer ownership of source images. Await submitted GPU work before releasing transient input leases.
 
 ## Packaging
 
@@ -66,4 +82,4 @@ dotnet pack src/VideoSpace.Core -c Release -o artifacts/packages
 dotnet pack src/VideoSpace.Controls -c Release -o artifacts/packages
 ```
 
-All ten libraries are configured for packaging. Uno packages target browser/native and require the browser workload. Desktop-only development builds are not complete multi-target packages. Public-feed publication is a separate operation from generating release artifacts.
+Multi-target Uno packages need the browser workload. `VideoSpaceDesktopOnly=true` is a development convenience, not a complete multi-target release build. Retain upstream notices when distributing packages.
