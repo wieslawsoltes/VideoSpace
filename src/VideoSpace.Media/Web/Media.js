@@ -265,5 +265,5 @@
     document.addEventListener('visibilitychange', () => { if (document.hidden) { for (const session of sessions.values()) session.element.pause(); M.stopAudio('preview'); M.emit('pause', 'Playback paused while the page is hidden.'); } });
   };
   M.dispose = () => { cancelAnimationFrame(animation); clearTimeout(saveTimer); for (const view of views.values()) { view.compositor.dispose(); view.compositor.canvas.remove(); } for (const a of assets.values()) { URL.revokeObjectURL(a.url); a.image?.close(); } M.releaseContext('program'); M.releaseContext('source'); generated.clear(); M.stopAudio(); audioContext?.close(); database?.close(); views.clear(); assets.clear(); };
-  M.assetAvailable = id => assets.has(id); M.waitFor = waitFor;
+  M.assetAvailable = id => assets.has(id); M.localSource = id => assets.get(id)?.url ?? null; M.waitFor = waitFor;
 })(globalThis);

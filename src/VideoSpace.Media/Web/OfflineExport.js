@@ -33,7 +33,13 @@
         const to = await E.inputs({ ...plan, layers: [t.to], captions: [] }, context + ':to:' + layer.clipId, signal, budget);
         inputs.push({ layer, transition: { from, to } });
       } else if (layer.nested) inputs.push({ layer, nested: await E.inputs(layer.nested, context + ':nested:' + layer.clipId, signal, budget) });
-      else inputs.push({ layer, source: await sourceReady(layer, context, signal) });
+      else if (layer.kind === 'Video' && budget.indexed) {
+        const url = g.VideoSpaceMedia.localSource(layer.assetId);
+        if (!url) throw new Error('Relink offline video: ' + layer.assetId);
+        const lease = await budget.indexed.frame(layer.assetId, url, layer.sourceTime, signal);
+        if (lease) { budget.leases.push(lease); inputs.push({ layer, source: lease.source, version: lease.version }); }
+        else inputs.push({ layer, source: await sourceReady(layer, context, signal) });
+      } else inputs.push({ layer, source: await sourceReady(layer, context, signal) });
     }
     if (plan.captions.length) inputs.push(...g.VideoSpaceMedia.inputs({ ...plan, layers: [] }, context, false, 1, budget));
     return inputs;
@@ -42,7 +48,7 @@
     const M = g.VideoSpaceMedia;
     if (active) { M.emit('error', 'An offline export is already running.'); return; }
     const controller = active = new AbortController(), signal = controller.signal;
-    let renderer, video, audio, decoderContext, failure;
+    let renderer, video, audio, decoderContext, indexed, failure;
     const pcm = new Map();
     try {
       if (!g.VideoEncoder || !g.VideoFrame || !g.AudioEncoder || !g.AudioData) throw new Error('This browser does not expose the required WebCodecs encoders. Project and still-image export remain available.');
@@ -66,12 +72,17 @@
       const planner = g.VideoSpaceExport.prepare(project), mixer = g.VideoSpaceExport.prepareAudio(project);
       decoderContext = new OfflineAudioContext(2, 1, 48000);
       let decodedBytes = 0;
-      for (const asset of mixer.sources) {
+      indexed = new g.VideoSpaceIndexedVideo.Sources();
+      // Unrelated/offline audio outside In/Out must neither consume decode memory
+      // nor block an otherwise self-contained export.
+      const usedAudio = new Set(mixer.voices.filter(v => v.start < to / fps && v.end > from / fps).map(v => v.asset.id));
+      for (const asset of mixer.sources.filter(a => usedAudio.has(a.id))) {
         const id = asset.id; if (asset.source === 'tone') continue;
         M.emit('progress', 'Decoding audio · ' + asset.name); signal.throwIfAborted();
         if (asset.durationSeconds * 48000 * 8 > 256 * 1024 * 1024 || asset.byteLength > 128 * 1024 * 1024) throw new Error('Source exceeds the offline PCM decode budget: ' + asset.name);
-        const element = await sourceReady({ clipId: 'audio-' + id, assetId: id, kind: 'Audio', sourceTime: 0, speed: 1 }, 'offline', signal);
-        const response = await fetch(element.currentSrc || element.src, { signal });
+        const url = M.localSource(id);
+        if (!url) throw new Error('Relink offline audio: ' + asset.name);
+        const response = await fetch(url, { signal });
         if (!response.ok) throw new Error('Could not read local audio source: ' + asset.name);
         const bytes = await response.arrayBuffer();
         if (bytes.byteLength > 128 * 1024 * 1024) throw new Error('Compressed audio exceeds the decode budget.');
@@ -91,10 +102,13 @@
       let encodedSamples = 0;
       for (let i = 0; i < count; i++) {
         signal.throwIfAborted();
-        const plan = planner.evaluate(from + i), inputs = await E.inputs(plan, 'offline', signal);
-        renderer.draw(plan, inputs);
-        if (renderer.lost) throw new Error('Graphics device was lost during export.');
-        if (renderer.device) await renderer.device.queue.onSubmittedWorkDone();
+        const plan = planner.evaluate(from + i), budget = { nodes: 0, indexed, leases: [] };
+        try {
+          const inputs = await E.inputs(plan, 'offline', signal, budget);
+          renderer.draw(plan, inputs);
+          if (renderer.lost) throw new Error('Graphics device was lost during export.');
+          if (renderer.device) await renderer.device.queue.onSubmittedWorkDone();
+        } finally { for (const lease of budget.leases) lease.release(); }
         const timestamp = Math.round(i / fps * 1e6), end = Math.round((i + 1) / fps * 1e6);
         const frame = new VideoFrame(renderer.canvas, { timestamp, duration: end - timestamp });
         try { video.encode(frame, { keyFrame: i % Math.max(1, Math.round(fps * 2)) === 0 }); } finally { frame.close(); }
@@ -114,13 +128,13 @@
       await video.flush(); await audio.flush(); if (failure) throw failure; signal.throwIfAborted();
       const blob = mux.finalize();
       M.downloadBlob(blob, (project.name || 'VideoSpace').replace(/[\\/:*?"<>|]/g, '-') + '.webm'); M.diagnostics.exports++;
-      M.diagnostics.lastExport = { mode: 'offline', backend: renderer.backend, frames: count, samples: totalSamples, durationUs, width, height, bytes: blob.size, codec: config.codec };
+      M.diagnostics.lastExport = { mode: 'offline', backend: renderer.backend, frames: count, samples: totalSamples, durationUs, width, height, bytes: blob.size, codec: config.codec, indexedDecode: { ...indexed.stats }, sourceFallbacks: Object.fromEntries(indexed.unsupported) };
       M.emit('exportDone', `Exported ${count} frames and ${totalSamples} stereo samples · ${(blob.size / 1048576).toFixed(1)} MB WebM`);
     } catch (error) {
       M.emit('exportDone', failure ? 'Export failed: ' + failure.message : signal.aborted ? 'Export cancelled.' : 'Export failed: ' + error.message);
     } finally {
       for (const encoder of [video, audio]) if (encoder && encoder.state !== 'closed') encoder.close();
-      renderer?.dispose(); M.releaseContext('offline'); pcm.clear(); decoderContext = null; active = null;
+      renderer?.dispose(); indexed?.dispose(); M.releaseContext('offline'); pcm.clear(); decoderContext = null; active = null;
     }
   };
 })(globalThis);
