@@ -1,7 +1,7 @@
 name: Media
 on:
   push:
-    branches: [feat/parity-performance]
+    branches: [feat/parity-performance, feat/indexed-source-decoding]
   workflow_call:
   workflow_dispatch:
 permissions:
@@ -41,4 +41,5 @@ jobs:
             artifacts/media-*.log
             artifacts/offline-*.webm
             artifacts/render-graph.json
+            artifacts/indexed-*.json
             artifacts/fixtures

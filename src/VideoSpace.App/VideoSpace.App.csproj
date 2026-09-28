@@ -4,7 +4,7 @@
     <TargetFrameworks Condition="'$(VideoSpaceDesktopOnly)' == 'true'">net10.0-desktop</TargetFrameworks>
     <OutputType>Exe</OutputType><UnoSingleProject>true</UnoSingleProject><UnoFeatures>SkiaRenderer;</UnoFeatures>
     <ApplicationTitle>VideoSpace</ApplicationTitle><ApplicationId>io.github.wieslawsoltes.videospace</ApplicationId>
-    <ApplicationDisplayVersion>0.2.0</ApplicationDisplayVersion><ApplicationVersion>2</ApplicationVersion><ApplicationPublisher>VideoSpace contributors</ApplicationPublisher>
+    <ApplicationDisplayVersion>0.3.0</ApplicationDisplayVersion><ApplicationVersion>3</ApplicationVersion><ApplicationPublisher>VideoSpace contributors</ApplicationPublisher>
     <Description>Local-first nonlinear video editing with Uno Platform and GPU composition.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks><IsPackable>false</IsPackable><UnoDisableHotDesign>true</UnoDisableHotDesign><UnoDisableMCPSupport>true</UnoDisableMCPSupport>
     <RunAOTCompilation>false</RunAOTCompilation><WasmShellGenerateAOTProfile>false</WasmShellGenerateAOTProfile><JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>

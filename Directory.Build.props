@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><LangVersion>14</LangVersion>
-    <Version>0.2.0-alpha.1</Version><SkiaSharpVersion>3.119.2</SkiaSharpVersion>
+    <Version>0.3.0-alpha.1</Version><SkiaSharpVersion>3.119.2</SkiaSharpVersion>
     <Authors>Wiesław Šoltés; VideoSpace contributors</Authors><Company>VideoSpace</Company>
     <RepositoryUrl>https://github.com/wieslawsoltes/VideoSpace</RepositoryUrl><RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/wieslawsoltes/VideoSpace</PackageProjectUrl><PackageLicenseExpression>MIT</PackageLicenseExpression>

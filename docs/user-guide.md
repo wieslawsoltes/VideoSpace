@@ -1,62 +1,57 @@
 # User guide
 
-## Project and source preparation
+## Start editing
 
-NORTH is an editable demo with original generated landscapes, titles, synthesized audio, markers and captions. Space plays, the ruler seeks, and Effect Controls edits selected timeline clips.
+NORTH contains original generated landscapes, titles, synthesized audio, markers and captions. Space plays; the timeline ruler seeks. Select a clip and open Effect Controls to change it. File → New project creates a blank sequence with explicit dimensions and rational timebase.
 
-File → New project creates a blank sequence with a name, dimensions and rational timebase such as 24/1, 25/1, 30000/1001 or 60000/1001. Save your current project first. Creating a new project replaces the editing session but does not delete imported browser media.
+Import local video/audio/images through Import or file drop. Browser format support varies. Select a Project item to open Source, mark In/Out, then use Clip → Insert source / Overwrite source, comma/period, or drag it onto the timeline. Insert shifts sync-locked following material; overwrite replaces the target range. Imported video receives linked audio.
 
-Import local video/audio/images through Import or file drop. Supported codecs depend on the browser; a successful metadata read does not certify every frame of a damaged or unusual source. Imported bytes remain local. Large or unsupported audio may lack waveform previews.
+## Timeline and effects
 
-Select a Project item to open Source. Mark In/Out, then choose Clip → Insert source / Overwrite source, use comma/period, or drag to a timeline track. Insert shifts following sync-locked material; overwrite replaces the target range. Imported video receives linked audio on a compatible track.
+V selects/moves; edges trim; Shift-click extends selection. C razors, B guarded-ripple trims, N rolls an adjacent boundary, Y slips, R rate-stretches, and H pans. Ctrl temporarily bypasses snapping. Track L locks, V/M controls visibility/mute, audio S solos, and video sync-lock governs ripple participation. Invalid overlaps or exhausted source ranges roll back atomically.
 
-## Timeline editing and clipboard
+Effect values support typing or label scrubbing. Diamonds add/remove keys at the live playhead. Presets remain editable. Split/trim retains the original animation curve's sampling origin. The complete animation graph editor and professional effect catalog are not implemented.
 
-V selects and moves clips. Drag head/tail edges to trim. Shift-click extends selection. Linked selection follows related clips. Snapping uses clip edges, markers, zero and the playhead; Ctrl temporarily bypasses it.
+## Transitions
 
-C cuts at the pointer. Ctrl+K splits selection at the playhead, or unlocked active clips with no selection. B performs guarded ripple trims; N rolls adjacent boundaries; Y slips source windows; R rate-stretches; H pans. Locked tracks, invalid overlaps and exhausted source handles reject atomically. Layered composites belong on separate video tracks.
+Select the outgoing clip at an adjacent cut and use Clip → Add / edit transition. Choose dissolve, black/white dip, directional wipe or the compatible audio crossfade; enter a duration in sequence frames and select centered/start/end alignment. The gold timeline strip marks its range.
 
-Ctrl+C copies the selected clips, Ctrl+X copies and lifts them, and Ctrl+V overwrites their occupied ranges at the playhead. Relative starts, gaps, track ordinals, effect values, keyframes and links are preserved. Each pasted clip and link group receives new identifiers. Paste can restore required tracks/asset metadata in another project with the same timebase. Media bytes remain host-owned, and the clipboard lasts only for the editor session. Different timebases are rejected rather than silently rounding edits.
+Transitions use source handles on both clips. An error means the selected overlap cannot be decoded from the available source range; trim to expose handles, shorten the transition or change alignment. No automatic freeze frame hides insufficient handles. Copying both endpoints preserves their transition; deleting/moving an endpoint removes a detached transition.
 
-Track patches select targets. L locks; V/M toggles visibility/mute; audio S solos; video sync-lock determines ripple participation. Panel dividers adjust the workspace.
+## Nested sequences
 
-## Effects, titles and captions
+Select every clip intersecting the desired temporal range and choose Sequence → Nest selection. Split boundaries first for a shorter range. Nesting retains editable tracks, effects, transitions, captions, markers and audio. Video/audio nests stay linked.
 
-Type numeric values or drag property labels. One completed gesture creates one undo entry. A diamond adds/removes a keyframe at the playhead; changing an animated value updates that key. The engine supports linear/hold/smooth interpolation; the initial UI is not a full graph editor. Presets remain editable. Opacity fades reveal lower layers, but dedicated transition objects are not implemented.
+Select the nested clip and choose Open nested sequence. Child edits remain part of the root document; Save always exports that root. Return to parent sequence leaves the child. Undo can restore child edits from the parent. Unnest requires compatible timebase, default outer effects, untrimmed unit-speed placement and compatible track settings; it rejects cases that would alter the result.
 
-Titles are reusable text assets editable through Effect Controls. M creates a marker. Captions supports creation, editing, deletion and seeking. SRT import replaces the caption set; SRT export writes it. Inspect typography visually before delivery: this is not a complete multilingual caption styling system.
+## Multicamera editing
 
-## Saving and local recovery
+Sequence → Create multicamera source combines 2–16 video/image/generated assets. Select cameras and enter manual source offsets. The common usable range is the shortest remaining source. Audio can stay on the first selected angle or follow camera cuts.
 
-Ctrl+S writes a `.videospace` manifest; Ctrl+O opens a project or SRT. Manifests preserve edits but do not embed source media. Keep original files. IndexedDB recovery depends on browser quota and eviction policy, and clearing site data removes that copy. Import matching offline filenames and byte lengths to relink. This policy is not content hashing. Native recovery currently preserves manifests, not imported image bytes.
+Insert the group from Source, select its timeline clip, and press 1–9 at the playhead or choose a camera in Effect Controls. Cuts are held angle keys and are undoable. Automatic waveform/timecode synchronization and a simultaneous angle-preview grid remain absent.
 
-## Export
+## Saving and exporting
 
-The Export panel's 720p/1080p WebM choices use the offline WebCodecs pipeline. The selected In/Out range determines frame count. Each frame is evaluated and encoded with an explicit timestamp; imported/generated audio is mixed to stereo PCM and encoded with Opus. Work proceeds according to decoder/encoder readiness, not wall-clock playback speed.
+Native `.videospace` files preserve the editing manifest and nested edits, not media bytes. Keep source files and save regularly; quota-dependent IndexedDB recovery is not a backup. Matching offline filenames and lengths relinks browser sources. Native recovery does not yet restore every imported media byte.
 
-Keep the page open until the download completes. Cancel closes the codecs and discards the in-progress output without changing edits. Exports are bounded to ten minutes, 256 MB encoded packets, 128 MB per compressed audio source and 256 MB total decoded audio. Use shorter In/Out sections when a budget is exceeded. A browser without the required encoders receives an explicit error; the application does not pretend a video file was saved.
+Offline WebM export renders each output frame and sample-clock audio. Supported VP8/VP9 WebM/Matroska sources use packet-indexed decoder output. Unsupported indexed features use a diagnosed browser-seeking fallback; arbitrary codec/VFR accuracy is not guaranteed. Cancellation discards only the incomplete export. The ten-minute and memory limits remain explicit.
 
-Output cadence is deterministic, but source decoding uses browser media-element seeks. Exact source-frame selection for all variable-frame-rate codecs is not guaranteed. Inspect delivered output. Native video encoding and frame-indexed professional codec ingest remain unimplemented.
-
-Other choices include native project, PNG current frame, SRT captions, cuts-only first-video-track EDL and managed generated-audio WAV. EDL is not a final layered movie. The WAV path rejects imported audio; offline WebM includes it. The older real-time recorder is an internal experimental API, not the supported UI export.
+PNG captures the current Program frame. SRT writes captions from the active sequence. EDL is first-video-track cuts only and rejects transitions, nests, camera groups and speed changes. Generated/nested WAV rejects undecoded imported PCM; browser WebM includes supported imported audio. Native video encoding and live native audio are not implemented.
 
 ## Shortcuts
 
 | Keys | Action |
 | --- | --- |
-| Space; J/K/L | Play/pause; reverse/stop/forward shuttle |
+| Space; J/K/L | Play/pause; shuttle/stop |
 | Left/Right; Shift+Left/Right | One frame; ten frames |
-| Home/End | Sequence bounds |
-| I/O/M | Sequence In/Out/marker |
+| Home/End; I/O/M | Sequence bounds; In/Out/marker |
 | V/C/B/N/Y/R/H | Selection/razor/ripple/roll/slip/stretch/hand |
-| S | Snapping |
-| Comma/period | Insert/overwrite source |
-| Ctrl+C/X/V | Copy/cut/paste clips |
-| Ctrl+K | Add edit |
-| Delete; Shift+Delete | Lift; guarded ripple delete |
-| Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y | Undo; redo |
-| Ctrl+N/S/O/I | New project/save/open/import |
-| Ctrl+wheel | Anchored timeline zoom |
-| Wheel; Shift+wheel | Horizontal; vertical timeline scroll |
+| 1–9 | Cut selected multicamera clip to angle |
+| S; comma/period | Snapping; insert/overwrite Source |
+| Ctrl+K; Delete/Shift+Delete | Split; lift/guarded ripple delete |
+| Ctrl+C/X/V | Copy/cut/paste clips and compatible internal transitions |
+| Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y | Undo/redo/redo |
+| Ctrl+N/S/O/I | New/save/open/import |
+| Ctrl+wheel; wheel/Shift+wheel | Anchored zoom; horizontal/vertical timeline scroll |
 
-Shortcuts are suspended inside text fields. Browser/OS reservations can intercept combinations; menu commands remain available. Hardware WebGPU is preferred, while software adapters automatically use WebGL2.
+Shortcuts are suspended in text fields. Browser/OS reservations can intercept some combinations; menus remain available.
