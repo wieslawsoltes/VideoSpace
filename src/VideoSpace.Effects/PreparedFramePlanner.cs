@@ -53,10 +53,11 @@ public sealed class PreparedFramePlanner
             if (track.Kind == TrackKind.Audio) AddAudio(audio, clip, track, frame, 1);
             else visual.Add(Layer(clip, frame));
         }
-        _lastFrame = frame; _lastCaptions = captions; Evaluations++;
         var result = new FramePlan((long)Math.Floor(frame), frame / p.FrameRate.Value, p.Width, p.Height, p.FrameRate.Value,
             visual.ToArray(), audio.ToArray(), captions ? p.Captions.Where(c => frame >= c.Start && frame < c.End).Select(c => c.Text).ToArray() : []);
-        FramePlanBudget.Validate(result); return _last = result;
+        FramePlanBudget.Validate(result);
+        _lastFrame = frame; _lastCaptions = captions; Evaluations++;
+        return _last = result;
     }
     public LayerPlan Layer(TimelineClip clip, double frame)
     {

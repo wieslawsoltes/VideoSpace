@@ -6,6 +6,15 @@
   let database, initialized = false, hidden = false, animation, project, saveTimer, audioContext, master, analyser, meterData;
   const audioNodes = new Map();
   let contentEpoch = 0;
+  const generatedLimit = 32;
+  // Eviction releases cache ownership; it never mutates canvases retained by an in-flight graph.
+  function sourceCanvas(key) {
+    let canvas = generated.get(key);
+    if (canvas) generated.delete(key);
+    else { if (generated.size >= generatedLimit) generated.delete(generated.keys().next().value); canvas = makeCanvas(); }
+    generated.set(key, canvas); M.diagnostics.generatedCacheBytes = generated.size * 960 * 540 * 4;
+    return canvas;
+  }
   const activeSessions = new Map();
   const dirty = () => { contentEpoch++; };
   global.addEventListener('resize', dirty);
@@ -37,10 +46,10 @@
   }
   function makeCanvas(width = 960, height = 540) { const c = document.createElement('canvas'); c.width = width; c.height = height; return c; }
   function generatedSource(layer, key) {
-    let canvas = generated.get(key); if (!canvas) { canvas = makeCanvas(); generated.set(key, canvas); }
+    const canvas = sourceCanvas(key);
     const stamp = JSON.stringify([layer.kind, layer.source, layer.text, layer.kind === 'Generator' ? layer.sourceTime : 0]);
     if (canvas.__vsStamp === stamp) return canvas;
-    canvas.__vsStamp = stamp; canvas.__vsVersion = (canvas.__vsVersion || 0) + 1; canvas.__vsUsed = performance.now(); M.diagnostics.generatedFrames++;
+    canvas.__vsStamp = stamp; canvas.__vsVersion = (canvas.__vsVersion || 0) + 1; M.diagnostics.generatedFrames++;
     const c = canvas.getContext('2d'), w = canvas.width, h = canvas.height; c.clearRect(0, 0, w, h);
     if (layer.kind === 'Title') { c.fillStyle = '#F6F1E5'; c.font = `${h * .14}px Inter, Arial, sans-serif`; c.textAlign = 'center'; c.fillText(layer.text || '', w / 2, h * .55); return canvas; }
     if (layer.kind === 'Captions') {
@@ -60,8 +69,9 @@
     return canvas;
   }
   function offlineSource(name) {
-    const key = 'offline:' + name; let canvas = generated.get(key); if (!canvas) { canvas = makeCanvas(); generated.set(key, canvas); }
-    if (canvas.__vsVersion) return canvas; canvas.__vsVersion = 1; const c = canvas.getContext('2d'); c.fillStyle = '#25282B'; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = '#B7BCC2'; c.font = '18px Arial'; c.textAlign = 'center'; c.fillText('MEDIA OFFLINE — IMPORT TO RELINK', 480, 262); c.font = '13px Arial'; c.fillText(String(name).slice(0, 90), 480, 295); return canvas;
+    const canvas = sourceCanvas('offline:' + name);
+    if (canvas.__vsVersion) return canvas; canvas.__vsVersion = 1;
+    const c = canvas.getContext('2d'); c.fillStyle = '#25282B'; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = '#B7BCC2'; c.font = '18px Arial'; c.textAlign = 'center'; c.fillText('MEDIA OFFLINE — IMPORT TO RELINK', 480, 262); c.font = '13px Arial'; c.fillText(String(name).slice(0, 90), 480, 295); return canvas;
   }
   M.getSource = (layer, key, playing, rate = 1) => {
     if (['Generator', 'Title', 'Captions'].includes(layer.kind)) return generatedSource(layer, key);
@@ -77,7 +87,7 @@
       const next = () => { if (!session.disposed) { changed(); session.callback = video.requestVideoFrameCallback(next); } };
       if (video.requestVideoFrameCallback) session.callback = video.requestVideoFrameCallback(next);
     }
-    const root = key.split(':')[0]; activeSessions.get(root)?.add(key);
+    activeSessions.get(key.split(':')[0])?.add(key);
     const v = session.element; session.used = performance.now();
     const target = Math.max(0, Math.min(layer.sourceTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .001) : layer.sourceTime));
     if (v.readyState >= 1 && !v.seeking && Math.abs(v.currentTime - target) > (playing && rate > 0 ? .16 : .0008)) { try { v.currentTime = target; } catch { } }
@@ -88,6 +98,7 @@
     const result = [];
     for (const layer of plan.layers) {
       if (++budget.nodes > 4096) throw new Error('Expanded composition exceeds 4096 nodes.');
+      if (['Generator', 'Title'].includes(layer.kind) && (budget.generated = (budget.generated || 0) + 1) > 48) throw new Error('Active generated layers exceed the canvas memory budget.');
       const key = context + ':' + layer.clipId;
       if (layer.transition) {
         const t = layer.transition;
@@ -98,7 +109,11 @@
       } else if (layer.nested) result.push({ layer, nested: M.inputs(layer.nested, key + ':nested', playing, rate * layer.speed, budget) });
       else result.push({ layer, source: M.getSource(layer, key, playing, rate) });
     }
-    if (plan.captions?.length) { const layer = { clipId: 'captions', kind: 'Captions', text: plan.captions.join('  '), opacity: 1, scale: 1, contrast: 1, saturation: 1 }; result.push({ layer, source: generatedSource(layer, context + ':captions') }); }
+    if (plan.captions?.length) {
+      if ((budget.generated = (budget.generated || 0) + 1) > 48) throw new Error('Active generated layers exceed the canvas memory budget.');
+      const layer = { clipId: 'captions', kind: 'Captions', text: plan.captions.join('  '), opacity: 1, scale: 1, contrast: 1, saturation: 1 };
+      result.push({ layer, source: generatedSource(layer, context + ':captions') });
+    }
     return result;
   };
   async function register(file, asset, persist) {
@@ -161,7 +176,7 @@
         node = { gain, pan, prefix, assetId: layer.assetId };
         if (layer.source === 'tone') { const a = audioContext.createOscillator(), b = audioContext.createOscillator(); a.type = 'sine'; b.type = 'sine'; a.frequency.value = 110; b.frequency.value = 164.81; const level = audioContext.createGain(); level.gain.value = .12; a.connect(level); b.connect(level); level.connect(gain); a.start(); b.start(); node.oscillators = [a, b]; }
         else {
-          const asset = assets.get(layer.assetId); if (!asset) continue;
+          const asset = assets.get(layer.assetId);
           const element = document.createElement('audio'); element.src = asset.url; element.preload = 'auto'; const source = audioContext.createMediaElementSource(element); source.connect(gain); node.element = element; node.source = source;
         }
         audioNodes.set(key, node);
@@ -177,9 +192,7 @@
     for (const [key, node] of audioNodes) if (node.prefix === prefix && !active.has(key)) { node.gain.gain.setTargetAtTime(0, now, .008); node.element?.pause(); if (performance.now() - (node.used || 0) > 10000) { disposeAudio(node); audioNodes.delete(key); } }
     if (analyser) { analyser.getFloatTimeDomainData(meterData); const rms = Math.sqrt(meterData.reduce((s, v) => s + v * v, 0) / meterData.length); M.diagnostics.meter = [rms, rms]; }
   };
-  M.stopAudio = prefix => {
-    for (const [key, node] of audioNodes) if (!prefix || node.prefix === prefix) { disposeAudio(node); audioNodes.delete(key); }
-  };
+  M.stopAudio = prefix => { for (const [key, node] of audioNodes) if (!prefix || node.prefix === prefix) { disposeAudio(node); audioNodes.delete(key); } };
   M.releaseContext = prefix => {
     for (const [key, session] of sessions) if (key.startsWith(prefix + ':')) { stopSession(session); sessions.delete(key); }
     for (const key of generated.keys()) if (key.startsWith(prefix + ':')) generated.delete(key);
@@ -251,7 +264,6 @@
     document.addEventListener('drop', e => { if (e.dataTransfer?.files?.length) { e.preventDefault(); importFiles(e.dataTransfer.files); } });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { for (const session of sessions.values()) session.element.pause(); M.stopAudio('preview'); M.emit('pause', 'Playback paused while the page is hidden.'); } });
   };
-  M.dispose = () => { cancelAnimationFrame(animation); clearTimeout(saveTimer); for (const view of views.values()) { view.compositor.dispose(); view.compositor.canvas.remove(); } for (const a of assets.values()) { URL.revokeObjectURL(a.url); a.image?.close(); } M.releaseContext('program'); M.releaseContext('source'); M.stopAudio(); audioContext?.close(); database?.close(); views.clear(); assets.clear(); };
-  M.assetAvailable = id => assets.has(id);
-  M.waitFor = waitFor;
+  M.dispose = () => { cancelAnimationFrame(animation); clearTimeout(saveTimer); for (const view of views.values()) { view.compositor.dispose(); view.compositor.canvas.remove(); } for (const a of assets.values()) { URL.revokeObjectURL(a.url); a.image?.close(); } M.releaseContext('program'); M.releaseContext('source'); generated.clear(); M.stopAudio(); audioContext?.close(); database?.close(); views.clear(); assets.clear(); };
+  M.assetAvailable = id => assets.has(id); M.waitFor = waitFor;
 })(globalThis);

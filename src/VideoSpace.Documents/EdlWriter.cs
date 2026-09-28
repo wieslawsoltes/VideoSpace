@@ -3,13 +3,15 @@ using VideoSpace.Core;
 
 namespace VideoSpace.Documents;
 
-/// <summary>CMX3600 cuts-only export of one video track. Refuses speed changes rather than silently flattening them.</summary>
+/// <summary>CMX3600 cuts-only export of one video track. Rejects unsupported timing and compound edits.</summary>
 public static class EdlWriter
 {
     public static string Write(VideoProject project, string? trackId = null)
     {
         var track = trackId is null ? project.Tracks.FirstOrDefault(t => t.Kind == TrackKind.Video) : project.Tracks.FirstOrDefault(t => t.Id == trackId);
         if (track is null) throw new InvalidOperationException("No video track to export.");
+        if (track.Transitions.Count != 0 || track.Clips.Any(c => project.Asset(c.AssetId).Kind is MediaKind.Sequence or MediaKind.Multicam))
+            throw new InvalidOperationException("Cuts-only EDL cannot represent transitions, nested sequences or multicamera groups. Export the native project or rendered movie instead.");
         var output = new StringBuilder().Append("TITLE: ").AppendLine(Clean(project.SequenceName)).AppendLine("FCM: NON-DROP FRAME").AppendLine();
         int index = 0;
         foreach (var clip in track.Clips.OrderBy(c => c.Start))

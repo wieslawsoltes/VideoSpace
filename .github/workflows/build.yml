@@ -38,6 +38,8 @@ jobs:
         run: |
           dotnet run --project tests/VideoSpace.Tests -c Release 2>&1 | tee artifacts/engine.log
           dotnet run --project tests/VideoSpace.Editing.Tests -c Release 2>&1 | tee artifacts/editing.log
+          dotnet run --project tests/VideoSpace.Parity.Tests -c Release 2>&1 | tee artifacts/parity.log
+          dotnet run --project tests/VideoSpace.Rendering.Tests -c Release 2>&1 | tee artifacts/rendering.log
           dotnet run --project tests/VideoSpace.Fixtures -c Release -- artifacts/fixtures
           for file in src/VideoSpace.Media/Web/*.js; do node --check "$file"; done
           npm run test:plans 2>&1 | tee artifacts/frame-plans.log
@@ -92,9 +94,12 @@ jobs:
             artifacts/playwright-report
             artifacts/browser-results.xml
             artifacts/fixtures
+            artifacts/benchmarks
+            artifacts/idle.json
             artifacts/frame.png
             artifacts/exported.webm
             artifacts/edited.videospace
+            artifacts/nested-edited.videospace
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [browser, media]
@@ -159,4 +164,6 @@ jobs:
             artifacts/screenshots
             artifacts/test-results
             artifacts/browser-results.xml
+            artifacts/idle.json
             artifacts/exported.webm
+            artifacts/nested-edited.videospace

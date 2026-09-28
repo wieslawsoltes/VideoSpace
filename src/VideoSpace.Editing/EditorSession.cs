@@ -64,9 +64,7 @@ public sealed class EditorSession
         _editing = true; _index = null;
         try
         {
-            edit(Project);
-            TransitionEdits.PruneDetached(_root);
-            ProjectValidation.Validate(_root);
+            edit(Project); TransitionEdits.PruneDetached(_root); ProjectValidation.Validate(_root);
             string after = ProjectSnapshot.Write(_root);
             if (before == after) return false;
             _undo.Add(new(name, before, after)); _redo.Clear();
@@ -109,7 +107,12 @@ public sealed class EditorSession
     }
     public void Seek(long frame) { Playhead = Math.Clamp(frame, 0, Math.Max(0, Index.Duration - 1)); Notify(); }
     private void ResetReadState() { _index = null; RepairPath(); Revision++; Playing = false; CleanSelection(); Playhead = Math.Min(Playhead, Index.Duration - 1); }
-    private void CleanSelection() => Selection.RemoveWhere(id => !Index.Clips.ContainsKey(id));
+    private void CleanSelection()
+    {
+        if (Selection.Count == 0) return;
+        var ids = Project.Tracks.SelectMany(t => t.Clips).Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        Selection.RemoveWhere(id => !ids.Contains(id));
+    }
     private void RepairPath()
     {
         var p = _root;

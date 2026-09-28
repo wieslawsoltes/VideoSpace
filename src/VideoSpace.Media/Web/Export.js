@@ -22,8 +22,7 @@
   }
   const envelope = (clip, local) => {
     const e = clip.effects;
-    return (e.fadeIn > 0 ? clamp(local / e.fadeIn, 0, 1) : 1) *
-      (e.fadeOut > 0 ? clamp((clip.duration - 1 - local) / e.fadeOut, 0, 1) : 1);
+    return (e.fadeIn > 0 ? clamp(local / e.fadeIn, 0, 1) : 1) * (e.fadeOut > 0 ? clamp((clip.duration - 1 - local) / e.fadeOut, 0, 1) : 1);
   };
   const progress = (t, frame) => clamp((frame - t.start) / Math.max(1, t.end - t.start - 1), 0, 1);
   const contains = (t, frame) => t && frame >= t.start && frame < t.end;
@@ -40,7 +39,6 @@
     return { track, clips, starts: clips.map(c => c.start), transitions, transitionStarts: transitions.map(t => t.start) };
   }
   const emptyLayer = (id, kind) => ({ clipId: id, assetId: '', kind, source: '', text: '', color: '', sourceTime: 0, speed: 1, x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, exposure: 0, contrast: 1, saturation: 1, temperature: 0, vignette: 0, cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0 });
-
   function validatePlan(plan) {
     let nodes = 0;
     const layer = (l, depth) => {
@@ -77,8 +75,7 @@
         sourceTime: source, speed: clip.speed, x: at(e.x, local), y: at(e.y, local), scale: clamp(at(e.scale, local), .01, 20), rotation: at(e.rotation, local),
         opacity: clip.enabled ? clamp(at(e.opacity, local) * envelope(clip, local), 0, 1) : 0,
         exposure: clamp(at(e.exposure, local), -5, 5), contrast: clamp(at(e.contrast, local), 0, 3), saturation: clamp(at(e.saturation, local), 0, 3),
-        temperature: clamp(at(e.temperature, local), -1, 1), vignette: clamp(at(e.vignette, local), 0, 1),
-        cropLeft: e.cropLeft, cropRight: e.cropRight, cropTop: e.cropTop, cropBottom: e.cropBottom };
+        temperature: clamp(at(e.temperature, local), -1, 1), vignette: clamp(at(e.vignette, local), 0, 1), cropLeft: e.cropLeft, cropRight: e.cropRight, cropTop: e.cropTop, cropBottom: e.cropBottom };
       if (asset.kind === 'Sequence') result.nested = this.children.get(asset.id).evaluate(source * asset.sequence.frameRate.numerator / asset.sequence.frameRate.denominator);
       return result;
     }
@@ -120,13 +117,13 @@
         if (!clip?.enabled || frame >= clip.start + clip.duration) continue;
         if (t.kind === 'Audio') this.addAudio(audio, clip, t, frame, 1); else layers.push(this.layer(clip, frame));
       }
-      this.lastFrame = frame; this.lastCaptions = captions; this.evaluations++;
       const result = { frame: Math.floor(frame), seconds: frame / this.fps, width: p.width, height: p.height, fps: this.fps, layers, audio,
         captions: captions ? p.captions.filter(c => frame >= c.start && frame < c.end).map(c => c.text) : [] };
-      validatePlan(result); return this.last = result;
+      validatePlan(result);
+      this.lastFrame = frame; this.lastCaptions = captions; this.evaluations++;
+      return this.last = result;
     }
   }
-
   class PreparedAudioMixer {
     constructor(project) {
       const voices = [], indices = new Map(), ancestry = new Set();

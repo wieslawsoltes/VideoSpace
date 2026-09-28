@@ -6,8 +6,7 @@
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let active;
   E.cancel = () => active?.abort();
-  E.mix = (project, pcm, firstSample, frameCount, sampleRate = 48000) =>
-    g.VideoSpaceExport.prepareAudio(project).mix(pcm, firstSample, frameCount, sampleRate);
+  E.mix = (project, pcm, firstSample, frameCount, sampleRate = 48000) => g.VideoSpaceExport.prepareAudio(project).mix(pcm, firstSample, frameCount, sampleRate);
   async function sourceReady(layer, context, signal) {
     const M = g.VideoSpaceMedia, deadline = performance.now() + 20000;
     if (!['Video', 'Audio'].includes(layer.kind)) {
@@ -27,6 +26,7 @@
     const inputs = [];
     for (const layer of plan.layers) {
       if (++budget.nodes > 4096) throw new Error('Expanded render graph exceeds 4096 nodes.');
+      if (['Generator', 'Title'].includes(layer.kind) && (budget.generated = (budget.generated || 0) + 1) > 48) throw new Error('Active generated layers exceed the canvas memory budget.');
       if (layer.transition) {
         const t = layer.transition;
         const from = await E.inputs({ ...plan, layers: [t.from], captions: [] }, context + ':from:' + layer.clipId, signal, budget);
@@ -35,7 +35,7 @@
       } else if (layer.nested) inputs.push({ layer, nested: await E.inputs(layer.nested, context + ':nested:' + layer.clipId, signal, budget) });
       else inputs.push({ layer, source: await sourceReady(layer, context, signal) });
     }
-    if (plan.captions.length) inputs.push(...g.VideoSpaceMedia.inputs({ ...plan, layers: [] }, context, false, 1));
+    if (plan.captions.length) inputs.push(...g.VideoSpaceMedia.inputs({ ...plan, layers: [] }, context, false, 1, budget));
     return inputs;
   };
   E.run = async function (project, height = 720) {
@@ -64,12 +64,10 @@
       const audioConfig = { codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 192000 };
       if (!(await AudioEncoder.isConfigSupported(audioConfig)).supported) throw new Error('No Opus encoder is available.');
       const planner = g.VideoSpaceExport.prepare(project), mixer = g.VideoSpaceExport.prepareAudio(project);
-      const audioAssets = mixer.sources;
       decoderContext = new OfflineAudioContext(2, 1, 48000);
       let decodedBytes = 0;
-      for (const asset of audioAssets) {
-        const id = asset.id;
-        if (asset.source === 'tone') continue;
+      for (const asset of mixer.sources) {
+        const id = asset.id; if (asset.source === 'tone') continue;
         M.emit('progress', 'Decoding audio · ' + asset.name); signal.throwIfAborted();
         if (asset.durationSeconds * 48000 * 8 > 256 * 1024 * 1024 || asset.byteLength > 128 * 1024 * 1024) throw new Error('Source exceeds the offline PCM decode budget: ' + asset.name);
         const element = await sourceReady({ clipId: 'audio-' + id, assetId: id, kind: 'Audio', sourceTime: 0, speed: 1 }, 'offline', signal);
@@ -109,18 +107,13 @@
         }
         const deadline = performance.now() + 60000;
         while (video.encodeQueueSize >= 8 || audio.encodeQueueSize >= 16) {
-          signal.throwIfAborted();
-          if (performance.now() > deadline) throw new Error('Encoder queue did not make progress.');
-          await sleep(1);
+          signal.throwIfAborted(); if (performance.now() > deadline) throw new Error('Encoder queue did not make progress.'); await sleep(1);
         }
         if (i % 4 === 0) { M.emit('progress', `Offline export · ${i + 1}/${count} frames · ${Math.floor((i + 1) / count * 100)}%`); await sleep(0); }
       }
-      await video.flush(); await audio.flush();
-      if (failure) throw failure;
-      signal.throwIfAborted();
+      await video.flush(); await audio.flush(); if (failure) throw failure; signal.throwIfAborted();
       const blob = mux.finalize();
-      M.downloadBlob(blob, (project.name || 'VideoSpace').replace(/[\\/:*?"<>|]/g, '-') + '.webm');
-      M.diagnostics.exports++;
+      M.downloadBlob(blob, (project.name || 'VideoSpace').replace(/[\\/:*?"<>|]/g, '-') + '.webm'); M.diagnostics.exports++;
       M.diagnostics.lastExport = { mode: 'offline', backend: renderer.backend, frames: count, samples: totalSamples, durationUs, width, height, bytes: blob.size, codec: config.codec };
       M.emit('exportDone', `Exported ${count} frames and ${totalSamples} stereo samples · ${(blob.size / 1048576).toFixed(1)} MB WebM`);
     } catch (error) {
