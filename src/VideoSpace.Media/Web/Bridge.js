@@ -21,6 +21,7 @@
         case 'setProject': media.setProject(value); break;
         case 'diagnostics': g.videoSpaceState = value; break;
         case 'controls': g.videoSpaceControls = value; break;
+        case 'controlInvalidated': if (g.videoSpaceControls) delete g.videoSpaceControls[value]; break;
         case 'meter': return JSON.stringify(media?.diagnostics?.meter || [0, 0]);
         case 'visibility': document.documentElement.toggleAttribute('data-videospace-' + value.id + '-hidden', !value.visible); break;
         case 'dispose': g.VideoSpaceOffline.cancel(); media.dispose(); break;
