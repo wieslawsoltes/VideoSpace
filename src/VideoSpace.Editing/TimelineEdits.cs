@@ -5,7 +5,6 @@ namespace VideoSpace.Editing;
 public static class TimelineEdits
 {
     public static void RequireUnlocked(Track track) { if (track.Locked) throw new InvalidOperationException($"Track {track.Name} is locked."); }
-
     public static void Split(VideoProject p, IEnumerable<string> ids, long frame)
     {
         var links = new Dictionary<string, string>();
@@ -16,12 +15,8 @@ public static class TimelineEdits
             var right = ProjectSnapshot.CloneClip(clip); long offset = frame - clip.Start;
             right.Id = Guid.NewGuid().ToString("N"); right.Start = frame; right.Duration -= offset;
             right.SourceIn += p.FrameRate.Seconds(offset) * clip.Speed;
-            foreach (var value in right.Effects.Values)
-            {
-                var boundary = value.At(offset);
-                value.Keys = value.Keys.Where(k => k.Frame > offset).Select(k => k with { Frame = k.Frame - offset }).ToList();
-                if (value.Keys.Count > 0) value.Keys.Insert(0, new(0, boundary)); else value.Value = boundary;
-            }
+            foreach (var value in right.Effects.Values.Append(right.CameraAngle)) value.FrameOffset += offset;
+            foreach (var transition in track.Transitions.Where(t => t.LeftClipId == clip.Id)) transition.LeftClipId = right.Id;
             if (right.LinkId is { } oldLink)
             {
                 if (!links.TryGetValue(oldLink, out var newLink)) links.Add(oldLink, newLink = Guid.NewGuid().ToString("N"));
@@ -30,7 +25,6 @@ public static class TimelineEdits
             clip.Duration = offset; clip.Effects.FadeOut = 0; right.Effects.FadeIn = 0; track.Clips.Add(right);
         }
     }
-
     public static void Move(VideoProject p, IEnumerable<string> ids, long delta, string? targetTrack = null)
     {
         string[] selected = ids.ToArray();
@@ -42,7 +36,6 @@ public static class TimelineEdits
             var clip = p.Clip(selected[0]); source.Clips.Remove(clip); target.Clips.Add(clip);
         }
     }
-
     public static void Trim(VideoProject p, string id, long boundary, bool start, bool ripple = false, bool linked = true)
     {
         var initial = p.Clip(id);
@@ -70,7 +63,6 @@ public static class TimelineEdits
             }
         }
     }
-
     public static void Delete(VideoProject p, IEnumerable<string> ids, bool ripple)
     {
         var selected = ids.ToHashSet();
@@ -88,7 +80,6 @@ public static class TimelineEdits
             foreach (var clip in track.Clips.Where(c => c.Start >= to)) { RequireUnlocked(track); clip.Start -= to - from; }
         }
     }
-
     public static string Insert(VideoProject p, string assetId, string trackId, long at, double sourceIn, long duration, bool overwrite)
     {
         var track = p.Tracks.First(t => t.Id == trackId); RequireUnlocked(track); var asset = p.Asset(assetId);
@@ -106,12 +97,10 @@ public static class TimelineEdits
         var clip = new TimelineClip { AssetId = assetId, Name = asset.Name, Start = at, Duration = duration, SourceIn = sourceIn };
         track.Clips.Add(clip); return clip.Id;
     }
-
     public static void Slip(VideoProject p, string id, long frames)
     {
         RequireUnlocked(p.TrackFor(id)); var clip = p.Clip(id); clip.SourceIn += p.FrameRate.Seconds(frames) * clip.Speed;
     }
-
     public static void Roll(VideoProject p, string leftId, long boundary)
     {
         var track = p.TrackFor(leftId); RequireUnlocked(track); var left = p.Clip(leftId);
@@ -119,20 +108,17 @@ public static class TimelineEdits
         long delta = boundary - left.End; left.Duration += delta; right.Start += delta; right.Duration -= delta;
         right.SourceIn += p.FrameRate.Seconds(delta) * right.Speed; ShiftKeys(right, delta);
     }
-
     public static void RateStretch(VideoProject p, string id, long end)
     {
         RequireUnlocked(p.TrackFor(id)); var clip = p.Clip(id); long duration = end - clip.Start;
         if (duration < 1) throw new InvalidOperationException("Duration must be positive.");
         clip.Speed *= (double)clip.Duration / duration; clip.Duration = duration;
     }
-
     public static void Link(VideoProject p, IEnumerable<string> ids, bool unlink)
     {
         var link = unlink ? null : Guid.NewGuid().ToString("N");
         foreach (var id in ids) { RequireUnlocked(p.TrackFor(id)); p.Clip(id).LinkId = link; }
     }
-
     private static void RemoveRange(VideoProject p, Track track, long from, long to)
     {
         Split(p, track.Clips.Where(c => c.Start < from && c.End > from).Select(c => c.Id).ToArray(), from);
@@ -141,12 +127,6 @@ public static class TimelineEdits
     }
     private static void ShiftKeys(TimelineClip clip, long delta)
     {
-        foreach (var value in clip.Effects.Values)
-        {
-            double at = value.At(delta);
-            value.Keys = value.Keys.Where(k => k.Frame >= delta).Select(k => k with { Frame = k.Frame - delta }).ToList();
-            if (value.Keys.Count > 0 && value.Keys[0].Frame > 0) value.Keys.Insert(0, new(0, at));
-            if (value.Keys.Count == 0) value.Value = at;
-        }
+        foreach (var value in clip.Effects.Values.Append(clip.CameraAngle)) value.FrameOffset += delta;
     }
 }

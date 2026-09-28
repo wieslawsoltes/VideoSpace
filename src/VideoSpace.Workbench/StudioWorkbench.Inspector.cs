@@ -16,6 +16,7 @@ public sealed partial class StudioWorkbench
         var heading = Studio.Text(clip.Name, 13); heading.Margin = new(12, 10, 12, 3); _inspector.Children.Add(heading);
         var sourceInfo = Studio.Text($"{track.Name}  ·  {asset.Kind}  ·  {Timecode.Format(clip.Duration, p.FrameRate)}", 10, Studio.Muted); sourceInfo.Margin = new(12, 0, 12, 6); _inspector.Children.Add(sourceInfo);
         var actionRow = Studio.Row(Command("Undo", "Undo", () => Session.Undo(), "undo"), Command("Redo", "Redo", () => Session.Redo(), "redo"), Command("Split", "Split", Split, "razor"), Command("Delete", "Delete", () => Delete(false), "trash")); actionRow.Margin = new(6, 2, 6, 8); _inspector.Children.Add(actionRow);
+        AddSequenceInspector(clip, asset);
         if (track.Locked) { var warning = Studio.Text("Track is locked. Unlock it before changing clip properties.", 11, "#DCC087"); warning.TextWrapping = TextWrapping.Wrap; warning.Margin = new(12, 5, 12, 8); _inspector.Children.Add(warning); }
         void Scalar(string label, Func<TimelineClip, double> get, Action<TimelineClip, double> set, double min, double max, double step = 1)
         {
@@ -30,11 +31,11 @@ public sealed partial class StudioWorkbench
             field.Committed += next => Edit("Set " + label, project =>
             {
                 TimelineEdits.RequireUnlocked(project.TrackFor(id)); var effect = get(project.Clip(id).Effects);
-                if (effect.Keys.Count > 0) effect.SetKey(local, next / factor); else effect.Value = next / factor;
+                if (effect.Keys.Count > 0) effect.SetKey(Math.Clamp(Session.Playhead - project.Clip(id).Start, 0, project.Clip(id).Duration - 1), next / factor); else effect.Value = next / factor;
             });
             Studio.At(row, field);
-            var key = new StudioButton("", () => Edit("Keyframe " + label, project => { TimelineEdits.RequireUnlocked(project.TrackFor(id)); var effect = get(project.Clip(id).Effects); if (effect.Keys.Any(k => k.Frame == local)) effect.Keys.RemoveAll(k => k.Frame == local); else effect.SetKey(local, effect.At(local)); }), "key", "Keyframe " + label) { IsEnabled = !track.Locked, Margin = new(0, 2, 5, 2) };
-            key.SetActive(value.Keys.Any(k => k.Frame == local)); Studio.At(row, key, column: 1); _inspector.Children.Add(row);
+            var key = new StudioButton("", () => Edit("Keyframe " + label, project => { TimelineEdits.RequireUnlocked(project.TrackFor(id)); var effect = get(project.Clip(id).Effects); long cursor = Math.Clamp(Session.Playhead - project.Clip(id).Start, 0, project.Clip(id).Duration - 1); if (effect.HasKey(cursor)) effect.RemoveKey(cursor); else effect.SetKey(cursor, effect.At(cursor)); }), "key", "Keyframe " + label) { IsEnabled = !track.Locked, Margin = new(0, 2, 5, 2) };
+            key.SetActive(value.HasKey(local)); Studio.At(row, key, column: 1); _inspector.Children.Add(row);
         }
         if (track.Kind != TrackKind.Audio)
         {
@@ -98,8 +99,7 @@ public sealed partial class StudioWorkbench
     {
         var body = new StackPanel { Spacing = 7, Margin = new(16) }; var p = Session.Project;
         foreach (var text in new[] { "PROJECT", p.Name, "Sequence: " + p.SequenceName, $"{p.Width} × {p.Height} · {p.FrameRate} fps", $"Duration: {Timecode.Format(p.Duration, p.FrameRate)}", $"{p.Assets.Count} assets · {p.Tracks.Count} tracks", "Storage: local device", "Project format: VideoSpace JSON / schema 1" }) body.Children.Add(Studio.Text(text, 12));
-        body.Children.Add(new StudioButton("Sequence settings…", SequenceSettings));
-        return new ScrollViewer { Content = body };
+        body.Children.Add(new StudioButton("Sequence settings…", SequenceSettings)); return new ScrollViewer { Content = body };
     }
     private void RebuildHistory()
     {

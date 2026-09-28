@@ -20,5 +20,6 @@ public sealed class ClipEffects
     public double CropRight { get; set; }
     public double CropTop { get; set; }
     public double CropBottom { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public IEnumerable<AnimatedValue> Values => [X, Y, Scale, Rotation, Opacity, Exposure, Contrast, Saturation, Temperature, Vignette, Gain];
 }

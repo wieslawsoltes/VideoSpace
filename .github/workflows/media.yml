@@ -1,5 +1,7 @@
 name: Media
 on:
+  push:
+    branches: [feat/parity-performance]
   workflow_call:
   workflow_dispatch:
 permissions:
@@ -38,3 +40,5 @@ jobs:
           path: |
             artifacts/media-*.log
             artifacts/offline-*.webm
+            artifacts/render-graph.json
+            artifacts/fixtures

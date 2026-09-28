@@ -1,7 +1,7 @@
 name: Engine
 on:
   push:
-    branches: [main]
+    branches: [main, feat/parity-performance]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -18,5 +18,17 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - run: dotnet run --project tests/VideoSpace.Tests -c Release
-      - run: dotnet run --project tests/VideoSpace.Editing.Tests -c Release
+      - name: Engine and parity regressions
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          dotnet run --project tests/VideoSpace.Tests -c Release 2>&1 | tee artifacts/core.log
+          dotnet run --project tests/VideoSpace.Editing.Tests -c Release 2>&1 | tee artifacts/editing.log
+          dotnet run --project tests/VideoSpace.Parity.Tests -c Release 2>&1 | tee artifacts/parity.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VideoSpace-engine-validation
+          path: |
+            artifacts/*.log
+            artifacts/benchmarks

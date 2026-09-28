@@ -12,4 +12,5 @@ public sealed class Track
     public bool SyncLock { get; set; } = true;
     public double Gain { get; set; } = 1;
     public List<TimelineClip> Clips { get; set; } = [];
+    public List<TimelineTransition> Transitions { get; set; } = [];
 }

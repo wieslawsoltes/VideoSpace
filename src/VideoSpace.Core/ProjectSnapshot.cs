@@ -9,7 +9,7 @@ public static class ProjectSnapshot
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
-        MaxDepth = 64,
+        MaxDepth = 128,
         Converters = { new JsonStringEnumConverter() }
     };
     public static string Write(VideoProject project) => JsonSerializer.Serialize(project, Options);

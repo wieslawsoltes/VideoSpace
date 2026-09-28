@@ -13,6 +13,13 @@ public static class UiRegistry
     {
         Elements[id] = new(element);
 #if __WASM__
+        // A reconstructed menu must not expose the old instance's rectangle before
+        // the new control has loaded and been arranged. Tests still use real input.
+        Invalidate(id);
+        element.Unloaded += (_, _) =>
+        {
+            if (Elements.TryGetValue(id, out var weak) && weak.TryGetTarget(out var current) && ReferenceEquals(current, element)) Invalidate(id);
+        };
         if (_timer is null)
         {
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
@@ -31,4 +38,7 @@ public static class UiRegistry
         }
 #endif
     }
+#if __WASM__
+    private static void Invalidate(string id) => global::VideoSpace.Media.BrowserInterop.Call("controlInvalidated", JsonSerializer.Serialize(id));
+#endif
 }
