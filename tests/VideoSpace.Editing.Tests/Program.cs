@@ -4,7 +4,11 @@ using VideoSpace.Editing;
 int passed = 0;
 void Test(string name, Action test) { test(); passed++; Console.WriteLine("PASS " + name); }
 void Check(bool value) { if (!value) throw new Exception("Assertion failed"); }
-void Reject(Action action) { try { action(); } catch { return; } throw new Exception("Expected rejection"); }
+void Reject(Action action)
+{
+    try { action(); } catch (InvalidOperationException) { return; } catch (InvalidDataException) { return; }
+    throw new Exception("Expected a supported validation rejection");
+}
 Test("clipboard preserves effects and receives fresh identities", () =>
 {
     var session = new EditorSession(SampleProject.Create()); var clipboard = new TimelineClipboard();
@@ -50,5 +54,59 @@ Test("cross-timebase paste is rejected explicitly", () =>
 {
     var clipboard = new TimelineClipboard(); clipboard.Copy(SampleProject.Create(), ["ridge-cut"]);
     Reject(() => clipboard.Paste(new VideoProject { FrameRate = FrameRate.Ntsc }, 0));
+});
+(EditorSession Session, string[] Ids) NestVideo()
+{
+    var p = new VideoProject
+    {
+        Assets = [new() { Id = "image", Kind = MediaKind.Image }],
+        Tracks = [new() { Id = "v1", Kind = TrackKind.Video, Clips =
+        [new() { Id = "first", AssetId = "image", Start = 24, Duration = 48 }, new() { Id = "second", AssetId = "image", Start = 72, Duration = 48 }] }],
+        Markers = [new(30, "Preserved marker")]
+    };
+    var session = new EditorSession(p); string[] ids = [];
+    session.Execute("Nest", q => ids = SequenceEdits.Nest(q, ["first", "second"], "Compound"));
+    return (session, ids);
+}
+Test("unnest preserves a leading gap created by deleting child media", () =>
+{
+    var (s, ids) = NestVideo(); string asset = s.Project.Clip(ids[0]).AssetId;
+    s.OpenSequence(asset); s.Execute("Remove opening", p => TimelineEdits.Delete(p, ["first"], false)); s.NavigateUp();
+    string[] result = []; s.Execute("Unnest", p => result = SequenceEdits.Unnest(p, ids[0]));
+    Check(result.Length == 1 && s.Project.Clip(result[0]).Start == 72 && s.Project.Clip(result[0]).Duration == 48);
+    Check(s.Project.Markers.Single().Frame == 30); s.Undo(); Check(s.Project.Clip(ids[0]).Start == 24);
+});
+Test("unnest rejects parent overlaps without overwriting other media", () =>
+{
+    var (s, ids) = NestVideo();
+    s.Execute("Parent overlay", p => p.Tracks.Add(new() { Id = "v2", Clips = [new() { Id = "unrelated", AssetId = "image", Start = 30, Duration = 20 }] }));
+    string before = ProjectSnapshot.Write(s.Project);
+    Reject(() => s.Execute("Unnest", p => SequenceEdits.Unnest(p, ids[0])));
+    Check(before == ProjectSnapshot.Write(s.Project));
+});
+Test("unnest does not re-enable a disabled compound clip", () =>
+{
+    var (s, ids) = NestVideo(); s.Execute("Disable", p => p.Clip(ids[0]).Enabled = false);
+    string before = ProjectSnapshot.Write(s.Project); Reject(() => s.Execute("Unnest", p => SequenceEdits.Unnest(p, ids[0])));
+    Check(before == ProjectSnapshot.Write(s.Project));
+});
+Test("unnest rejects changed child geometry", () =>
+{
+    var (s, ids) = NestVideo(); s.Execute("Child aspect", p => p.Asset(p.Clip(ids[0]).AssetId).Sequence!.Width = 1080);
+    Reject(() => s.Execute("Unnest", p => SequenceEdits.Unnest(p, ids[0])));
+});
+Test("unnest requires linked audio and does not silently add sound", () =>
+{
+    var s = new EditorSession(SampleProject.Create()); string[] ids = [];
+    s.Execute("Nest", p => ids = SequenceEdits.Nest(p, p.Tracks.SelectMany(t => t.Clips).Select(c => c.Id), "Compound"));
+    s.Execute("Remove audio representation", p => TimelineEdits.Delete(p, [ids[1]], false));
+    Reject(() => s.Execute("Unnest", p => SequenceEdits.Unnest(p, ids[0])));
+});
+Test("unnest rejects desynchronized linked picture and audio", () =>
+{
+    var s = new EditorSession(SampleProject.Create()); string[] ids = [];
+    s.Execute("Nest", p => ids = SequenceEdits.Nest(p, p.Tracks.SelectMany(t => t.Clips).Select(c => c.Id), "Compound"));
+    s.Execute("Offset audio", p => p.Clip(ids[1]).Start = 24);
+    Reject(() => s.Execute("Unnest", p => SequenceEdits.Unnest(p, ids[0])));
 });
 Console.WriteLine($"{passed}/{passed} extended editing tests passed.");

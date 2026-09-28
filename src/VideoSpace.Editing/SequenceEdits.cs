@@ -66,19 +66,38 @@ public static class SequenceEdits
         var clip = p.Clip(clipId); var asset = p.Asset(clip.AssetId);
         var child = asset.Sequence ?? throw new InvalidOperationException("Select a nested sequence clip.");
         var siblings = p.Tracks.SelectMany(t => t.Clips).Where(c => c.Id == clipId || clip.LinkId is not null && c.LinkId == clip.LinkId && c.AssetId == asset.Id).ToArray();
-        if (child.FrameRate != p.FrameRate || siblings.Any(c => c.SourceIn != 0 || c.Speed != 1 || c.Duration != child.Duration || !Identity(c.Effects)))
-            throw new InvalidOperationException("Unnest requires an untrimmed, unit-speed sequence with default outer effects and the same timebase. Keep the nest to preserve its composition otherwise.");
-        foreach (var c in siblings) TimelineEdits.RequireUnlocked(p.TrackFor(c.Id));
+        if (child.FrameRate != p.FrameRate || child.Width != p.Width || child.Height != p.Height ||
+            siblings.Any(c => !c.Enabled || c.Start != clip.Start || c.SourceIn != 0 || c.Speed != 1 || c.Duration != child.Duration || !Identity(c.Effects)))
+            throw new InvalidOperationException("Unnest requires aligned, enabled, untrimmed unit-speed clips with default outer effects and matching sequence dimensions/timebase. Keep the nest to preserve its composition otherwise.");
+        var siblingIds = siblings.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        if (p.Tracks.SelectMany(t => t.Clips).Any(c => !siblingIds.Contains(c.Id) && c.Start < clip.End && c.End > clip.Start))
+            throw new InvalidOperationException("Unnest would change or overwrite other parent material in this temporal range. Move that material first or keep the nest.");
+        if (p.Tracks.SelectMany(t => t.Transitions).Any(t => siblingIds.Contains(t.LeftClipId) || siblingIds.Contains(t.RightClipId)))
+            throw new InvalidOperationException("Remove outer sequence transitions before unnesting; their composition cannot be flattened losslessly.");
+        var representedKinds = siblings.Select(c => p.TrackFor(c.Id).Kind == TrackKind.Audio ? TrackKind.Audio : TrackKind.Video).ToHashSet();
+        foreach (var c in siblings)
+        {
+            var outer = p.TrackFor(c.Id); TimelineEdits.RequireUnlocked(outer);
+            if (outer.Muted || outer.Kind == TrackKind.Audio && outer.Gain != 1)
+                throw new InvalidOperationException("Unnest requires an unmuted, unit-gain outer track. Keep the nest to preserve its mix.");
+        }
         foreach (var sourceTrack in child.Tracks.Where(t => t.Clips.Count > 0))
         {
+            var kind = sourceTrack.Kind == TrackKind.Audio ? TrackKind.Audio : TrackKind.Video;
+            if (!representedKinds.Contains(kind))
+                throw new InvalidOperationException("Unnest requires the linked picture and audio representations for the child content.");
             int ordinal = child.Tracks.Where(t => t.Kind == sourceTrack.Kind).ToList().IndexOf(sourceTrack);
             var target = p.Tracks.Where(t => t.Kind == sourceTrack.Kind).ElementAtOrDefault(ordinal);
             if ((target?.Gain ?? 1) != sourceTrack.Gain || (target?.Muted ?? false) != sourceTrack.Muted || (target?.Solo ?? false) != sourceTrack.Solo)
                 throw new InvalidOperationException("Unnest requires matching parent/child track gain, mute and solo settings. Keep the nest to preserve the mix.");
         }
-        var clipboard = new TimelineClipboard(); clipboard.Copy(child, child.Tracks.SelectMany(t => t.Clips).Select(c => c.Id));
+        var contents = child.Tracks.SelectMany(t => t.Clips).ToArray();
+        var clipboard = new TimelineClipboard(); clipboard.Copy(child, contents.Select(c => c.Id));
+        // Clipboard normalizes to its first occupied frame. Restore the child's
+        // leading gap so edits made after nesting cannot silently move source clips.
+        long firstOccupied = contents.Select(c => c.Start).DefaultIfEmpty(0).Min();
         foreach (var c in siblings) p.TrackFor(c.Id).Clips.Remove(c);
-        var result = clipboard.Paste(p, clip.Start);
+        var result = clipboard.Paste(p, checked(clip.Start + firstOccupied));
         p.Markers.AddRange(child.Markers.Select(m => m with { Frame = m.Frame + clip.Start }));
         p.Captions.AddRange(child.Captions.Select(c => c with { Start = c.Start + clip.Start, End = c.End + clip.Start }));
         return result;
