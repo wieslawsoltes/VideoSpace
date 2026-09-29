@@ -1,6 +1,6 @@
 # Reusable libraries
 
-The Core, Editing, Timeline, Effects, Audio and Documents packages target .NET 10 without Uno. Rendering adds Skia; Media/Controls/Workbench integrate the browser/native Uno hosts. All ten projects are packable; public-feed publication is a separate release operation.
+The Core, Editing, Timeline, Effects, Audio and Documents packages target .NET 10 without Uno. Rendering adds Skia; Media/Controls/Workbench integrate the browser/native Uno hosts. All ten packages are published to NuGet.org by the tag-triggered release workflow.
 
 ## Transactional editing and prepared frames
 

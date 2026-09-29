@@ -95,6 +95,20 @@ dotnet run --project src/VideoSpace.App -f net10.0-desktop \
 
 Linux requires a graphical session and Uno's native dependencies. Desktop CI compiles Windows, macOS and Linux; compilation is not native-media certification.
 
+## Download
+
+Every [release](https://github.com/wieslawsoltes/VideoSpace/releases/latest) ships a self-contained, single-file desktop app — no .NET install needed:
+
+| OS | x64 | Arm64 |
+| --- | --- | --- |
+| Windows | `VideoSpace-<version>-win-x64.zip` | `VideoSpace-<version>-win-arm64.zip` |
+| macOS | `VideoSpace-<version>-osx-x64.tar.gz` | `VideoSpace-<version>-osx-arm64.tar.gz` |
+| Linux | `VideoSpace-<version>-linux-x64.tar.gz` | `VideoSpace-<version>-linux-arm64.tar.gz` |
+
+Extract and run `VideoSpace` (`VideoSpace.exe` on Windows). Builds are not code-signed yet: on macOS clear the quarantine flag with `xattr -d com.apple.quarantine VideoSpace`; on Windows choose **More info → Run anyway** in SmartScreen. Verify downloads against `SHA256SUMS`. Releases also include the browser build and a source archive.
+
+The libraries below are published to [NuGet.org](https://www.nuget.org/packages?q=VideoSpace), e.g. `dotnet add package VideoSpace.Core`.
+
 ## Reusable libraries
 
 | Package | Responsibility |
@@ -110,11 +124,13 @@ Linux requires a graphical session and Uno's native dependencies. Desktop CI com
 | `VideoSpace.Controls` | Custom Uno timeline, panels, monitors, bins, icons and fields |
 | `VideoSpace.Workbench` | Embeddable editor and workflows |
 
-The first six libraries do not depend on Uno. All ten are configured for NuGet packaging. Standalone JavaScript modules can also be reused independently; [examples](docs/libraries.md) explain ownership and revision boundaries. Packable projects are not a claim of NuGet.org publication.
+The first six libraries do not depend on Uno. All ten are published to NuGet.org with symbols. Standalone JavaScript modules can also be reused independently; [examples](docs/libraries.md) explain ownership and revision boundaries.
 
 ## Validation and delivery
 
 Build runs engine, editing, parity, native pixel and cross-runtime evaluation tests; publishes the real Uno browser output; and exercises actual pointer/keyboard interactions. Independent media tests inspect decoded export frames/audio and transition pixels. Indexed-source tests encode variable-timestamp color frames and verify forward/backward presentation selection and eviction-safe ownership.
+
+**Release** runs for `v*` tags or a supplied manual version. It runs engine, fixture and frame-plan gates, publishes self-contained single-file desktop executables for Windows, macOS and Linux (x64 and arm64), builds the browser and source archives, packs all ten versioned libraries with symbols and emits `SHA256SUMS`. Tags attach all assets to a GitHub Release and publish the packages to NuGet.org with [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing) (OIDC, no stored API key) from the protected `nuget` environment. Manual runs are dry runs: they build and upload every asset as workflow artifacts but publish nothing.
 
 Pages deployment requires application and media acceptance. The public verification job checks the exact deployed commit, then repeats application tests on the public URL. Source, logs, screenshots, benchmark JSON and encoded samples are retained as Actions artifacts. See [development](docs/development.md).
 

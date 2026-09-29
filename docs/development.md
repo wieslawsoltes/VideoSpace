@@ -33,6 +33,6 @@ UI tests use read-only bounds to send actual pointer/keyboard events. Reconstruc
 
 ## Delivery gates
 
-Build requires core/editing/parity/native-render tests, cross-runtime/packet-index tests, full Uno acceptance and independent media acceptance. Only a successful main build deploys its tested site. `verify-pages.py` checks the exact public commit before repeating UI acceptance. Desktop independently compiles Windows, macOS and Linux. Release creates multi-target packages and native/browser archives; NuGet.org publication is not automatic.
+Build requires core/editing/parity/native-render tests, cross-runtime/packet-index tests, full Uno acceptance and independent media acceptance. Only a successful main build deploys its tested site. `verify-pages.py` checks the exact public commit before repeating UI acceptance. Desktop independently compiles Windows, macOS and Linux. Release creates multi-target packages, single-file desktop executables for six runtimes and browser/source archives; tags publish packages to NuGet.org via Trusted Publishing, while manual runs are dry runs.
 
 Do not equate desktop compilation with unavailable native video support, software-adapter rendering with physical WebGPU validation, or microbenchmarks with end-to-end FPS. Keep mutations transactional, release media leases deterministically, and document the support boundary when adding codecs or interchange formats.
